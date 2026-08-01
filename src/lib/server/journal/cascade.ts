@@ -297,12 +297,12 @@ export async function rattraperCascades(
 		.select({ membreId: cascades.memberId, contenantId: cascades.containerWorkId })
 		.from(cascades)
 		.where(isNull(cascades.completedAt));
-	const dejaPlanifiees = new Set(enAttente.map((c) => `${c.membreId} ${c.contenantId}`));
+	const dejaPlanifiees = new Set(enAttente.map((c) => `${c.membreId}\0${c.contenantId}`));
 
 	let replanifiees = 0;
 
 	for (const { membreId, contenantId } of contenants) {
-		if (dejaPlanifiees.has(`${membreId} ${contenantId}`)) continue;
+		if (dejaPlanifiees.has(`${membreId}\0${contenantId}`)) continue;
 
 		const contenus = await db
 			.select({ oeuvreId: workContents.contentWorkId })

@@ -221,7 +221,7 @@ export async function fusionnerManuellement(
 	const personnages = aDeplacer(
 		await db.query.workCharacters.findMany({ where: eq(workCharacters.workId, absorbee.id) }),
 		await db.query.workCharacters.findMany({ where: eq(workCharacters.workId, conservee.id) }),
-		(l) => `${l.entityId} ${l.source}`
+		(l) => `${l.entityId}\0${l.source}`
 	);
 	if (personnages.length > 0) {
 		await db
@@ -233,7 +233,7 @@ export async function fusionnerManuellement(
 	const createurs = aDeplacer(
 		await db.query.workCreators.findMany({ where: eq(workCreators.workId, absorbee.id) }),
 		await db.query.workCreators.findMany({ where: eq(workCreators.workId, conservee.id) }),
-		(l) => `${l.entityId} ${l.source} ${l.role}`
+		(l) => `${l.entityId}\0${l.source}\0${l.role}`
 	);
 	if (createurs.length > 0) {
 		await db.insert(workCreators).values(createurs.map((l) => ({ ...l, workId: conservee.id })));
@@ -243,7 +243,7 @@ export async function fusionnerManuellement(
 	const contenus = aDeplacer(
 		await db.query.workContents.findMany({ where: eq(workContents.containerWorkId, absorbee.id) }),
 		await db.query.workContents.findMany({ where: eq(workContents.containerWorkId, conservee.id) }),
-		(l) => `${l.source} ${l.externalId}`
+		(l) => `${l.source}\0${l.externalId}`
 	);
 	if (contenus.length > 0) {
 		await db

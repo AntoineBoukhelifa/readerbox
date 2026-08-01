@@ -338,7 +338,7 @@ export async function lireCoucheSource(db: Db, oeuvreId: string): Promise<Oeuvre
 		personnages: dedoublonner(personnages, (p) => p.entityId)
 			.sort((a, b) => a.position - b.position || a.nom.localeCompare(b.nom))
 			.map(({ entityId, nom }) => ({ entityId, nom })),
-		createurs: dedoublonner(createurs, (c) => `${c.entityId} ${c.role}`)
+		createurs: dedoublonner(createurs, (c) => `${c.entityId}\0${c.role}`)
 			.sort((a, b) => a.position - b.position || a.nom.localeCompare(b.nom))
 			.map(({ entityId, nom, role }) => ({ entityId, nom, role })),
 		contenu: contenus
@@ -513,8 +513,8 @@ export function appliquerCorrections(
 							return nom === undefined ? null : { entityId: c.entityId, nom, role: c.role };
 						})
 						.filter((c): c is CreateurLocal => c !== null),
-					new Set(correction.retires.map((c) => `${c.entityId} ${c.role}`)),
-					(c) => `${c.entityId} ${c.role}`
+					new Set(correction.retires.map((c) => `${c.entityId}\0${c.role}`)),
+					(c) => `${c.entityId}\0${c.role}`
 				);
 				break;
 			case 'contenu':

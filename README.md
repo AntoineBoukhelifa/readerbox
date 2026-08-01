@@ -20,6 +20,7 @@ Tout est gratuit et le reste — c'est une contrainte du projet, pas un accident
 - SvelteKit avec l'adaptateur Cloudflare, rendu côté serveur
 - Cloudflare Workers et D1, Drizzle pour le schéma et les migrations
 - Tailwind, Vitest
+- Cytoscape.js (MIT) pour le rendu du graphe, chargé à la demande dans le navigateur
 - Node 22 (voir `.nvmrc`)
 
 Le rendu côté serveur n'est pas un détail : le masquage anti-spoiler filtre les textes **avant** sérialisation. Un masquage appliqué côté client enverrait le texte dans la charge utile, ce qui n'est pas du masquage.
