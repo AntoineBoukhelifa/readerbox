@@ -17,9 +17,25 @@
  *    Les traiter pareil rendrait le graphe silencieusement amputé.
  */
 
-export type NomDeSource = 'metron' | 'comicvine' | 'tmdb';
+/**
+ * Les valeurs sont déclarées en tableaux plutôt qu'en unions parce que le
+ * schéma Drizzle a besoin des littéraux à l'exécution pour contraindre ses
+ * colonnes. Deux listes parallèles finiraient par diverger sans que rien ne le
+ * signale ; celle-ci fait foi et le schéma l'importe.
+ */
+export const NOMS_DE_SOURCE = ['metron', 'comicvine', 'tmdb'] as const;
+export type NomDeSource = (typeof NOMS_DE_SOURCE)[number];
 
-export type TypeOeuvre = 'numero' | 'recueil' | 'film' | 'serie' | 'saison' | 'episode' | 'roman';
+export const TYPES_OEUVRE = [
+	'numero',
+	'recueil',
+	'film',
+	'serie',
+	'saison',
+	'episode',
+	'roman'
+] as const;
+export type TypeOeuvre = (typeof TYPES_OEUVRE)[number];
 
 /** L'identité d'une entité chez une source donnée. */
 export interface ReferenceSource {
