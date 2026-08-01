@@ -1,7 +1,8 @@
-import { redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db';
-import { revokeSession, SESSION_COOKIE } from '$lib/server/auth/sessions';
-import { retirerCookieDeSession } from '$lib/server/auth/cookies';
+import { createSession, revokeSession, SESSION_COOKIE } from '$lib/server/auth/sessions';
+import { entrer, NOM_MAX, NOM_MIN, nomsPresents } from '$lib/server/auth/entree';
+import { poserCookieDeSession, retirerCookieDeSession } from '$lib/server/auth/cookies';
 import { lireJournal } from '$lib/server/journal/entries';
 import { listerOrdres } from '$lib/server/orders/orders';
 import { pourcentageAffiche } from '$lib/server/orders/progression';
@@ -14,7 +15,9 @@ const ORDRES_EN_ACCUEIL = 4;
 /**
  * L'accueil — deux pages en une, selon qu'on est du groupe ou non.
  *
- * Déconnecté, il n'a rien à montrer : le groupe est fermé et il le dit.
+ * Déconnecté, il *est* la porte : un champ, un nom, on entre. Il n'y a plus de
+ * lien d'invitation à réclamer ni de session à récupérer — connaître l'adresse
+ * suffit, et retaper son nom rend son journal (voir `auth/entree.ts`).
  *
  * Connecté, il ouvre sur **ce qui est en cours**, pas sur des liens. Le geste
  * le plus fréquent du produit est de consigner un numéro qu'on vient de lire
@@ -25,7 +28,15 @@ const ORDRES_EN_ACCUEIL = 4;
 export const load: PageServerLoad = async ({ locals, platform }) => {
 	const d1 = platform?.env?.DB;
 	if (!locals.member || !d1) {
-		return { member: null, enCours: [], derniereLecture: [], ordres: [] };
+		return {
+			member: null,
+			// Les noms déjà là, pour entrer d'un clic plutôt qu'en risquant la faute
+			// de frappe qui ouvrirait un journal vide.
+			presents: d1 ? await nomsPresents(getDb(d1)) : [],
+			enCours: [],
+			derniereLecture: [],
+			ordres: []
+		};
 	}
 
 	const db = getDb(d1);
@@ -44,6 +55,7 @@ export const load: PageServerLoad = async ({ locals, platform }) => {
 
 	return {
 		member: locals.member,
+		presents: [],
 		// Le journal arrive déjà trié du plus récemment touché au plus ancien.
 		enCours: journal
 			.filter((entree) => !entree.abandonnee && entree.etagere === 'en_cours')
@@ -65,6 +77,33 @@ export const load: PageServerLoad = async ({ locals, platform }) => {
 };
 
 export const actions: Actions = {
+	/**
+	 * Entrer — le seul geste d'admission qui reste.
+	 *
+	 * Il ne distingue pas l'arrivée du retour : un nom connu rend son journal, un
+	 * nom neuf ouvre une place. Demander à quelqu'un de choisir entre « se
+	 * connecter » et « s'inscrire », ce serait lui demander de se rappeler s'il
+	 * est déjà venu.
+	 */
+	entrer: async ({ request, cookies, platform }) => {
+		const d1 = platform?.env?.DB;
+		if (!d1) return fail(500, { message: 'Base indisponible.' });
+
+		const nom = String((await request.formData()).get('nom') ?? '');
+		const entree = await entrer(getDb(d1), nom);
+
+		if (!entree.ok) {
+			const messages = {
+				'trop court': `Il faut au moins ${NOM_MIN} caractères.`,
+				'trop long': `Pas plus de ${NOM_MAX} caractères.`
+			};
+			return fail(400, { message: messages[entree.motif] });
+		}
+
+		poserCookieDeSession(cookies, await createSession(getDb(d1), entree.membreId));
+		redirect(303, '/');
+	},
+
 	deconnexion: async ({ cookies, platform }) => {
 		const token = cookies.get(SESSION_COOKIE);
 		const d1 = platform?.env?.DB;

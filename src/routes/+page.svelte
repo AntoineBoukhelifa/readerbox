@@ -5,7 +5,7 @@
 	import Jauge from '$lib/components/Jauge.svelte';
 	import type { PageProps } from './$types';
 
-	let { data }: PageProps = $props();
+	let { data, form }: PageProps = $props();
 
 	const rienDeConsigne = $derived(data.enCours.length === 0 && data.derniereLecture.length === 0);
 </script>
@@ -106,17 +106,54 @@
 	</main>
 {:else}
 	<!--
-		Déconnecté, l'accueil n'a rien à montrer et ne fait pas semblant : le
-		groupe est fermé, on n'y entre que par un lien.
+		Déconnecté, l'accueil n'annonce pas une porte : il l'est. Le champ est la
+		première chose sous le titre, et le même geste sert à arriver et à
+		revenir — retaper son nom rend son journal.
 	-->
 	<main class="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-5 py-20">
 		<h1 class="font-display text-5xl leading-none tracking-[0.14em] uppercase">readerbox</h1>
 		<p class="mt-6 text-base leading-relaxed text-encre-basse">
-			Un compagnon de l’univers Marvel, pour un groupe fermé. Ce qu’on lit, ce qu’on regarde, dans
-			quel ordre, et ce qu’on en a pensé — sans se gâcher la suite.
+			Un compagnon de l’univers Marvel. Ce qu’on lit, ce qu’on regarde, dans quel ordre, et ce qu’on
+			en a pensé — sans se gâcher la suite.
 		</p>
-		<p class="mt-8 border-l-2 border-trait pl-4 text-sm leading-relaxed text-encre-tenue">
-			On n’entre que sur invitation. Demande son lien à quelqu’un qui est déjà là.
+
+		<form method="POST" action="?/entrer" class="mt-10 flex flex-wrap items-center gap-3">
+			<label class="sr-only" for="nom">Ton nom</label>
+			<input
+				id="nom"
+				name="nom"
+				autocomplete="nickname"
+				placeholder="Ton nom"
+				required
+				class="min-w-0 flex-1 border-b border-trait bg-transparent pb-2 font-display text-xl text-encre placeholder:text-encre-tenue focus:border-or focus:outline-none"
+			/>
+			<button class="action">Entrer</button>
+		</form>
+
+		{#if form?.message}
+			<p class="mt-4 border-l-2 border-braise pl-4 text-sm text-encre-basse">{form.message}</p>
+		{/if}
+
+		<p class="mt-4 text-sm leading-relaxed text-encre-tenue">
+			Pas de mot de passe. Si tu es déjà venu, remets le même nom et tu retrouves ton journal.
 		</p>
+
+		{#if data.presents.length > 0}
+			<h2 class="mt-12 enseigne">Déjà là</h2>
+			<ul class="mt-3 flex flex-wrap gap-2">
+				{#each data.presents as membre (membre.id)}
+					<li>
+						<form method="POST" action="?/entrer">
+							<input type="hidden" name="nom" value={membre.nom} />
+							<button
+								class="border border-trait px-3 py-1.5 text-sm text-encre-basse transition-colors hover:border-or hover:text-or focus-visible:border-or focus-visible:text-or focus-visible:outline-none"
+							>
+								{membre.nom}
+							</button>
+						</form>
+					</li>
+				{/each}
+			</ul>
+		{/if}
 	</main>
 {/if}

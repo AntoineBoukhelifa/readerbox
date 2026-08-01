@@ -1,4 +1,4 @@
-import { lireJson, parametres, type Transport } from './http';
+import { lireJson, parametres, TRANSPORT_REEL, type Transport } from './http';
 import { dateIso, identifiant, liste, objet, texte, type Objet } from './lecture';
 import type {
 	AdaptateurDeSource,
@@ -98,7 +98,7 @@ export interface OptionsTmdb {
 
 export function creerTmdb(options: OptionsTmdb): AdaptateurDeSource {
 	const base = options.base ?? BASE_TMDB;
-	const transport = options.transport ?? fetch;
+	const transport = options.transport ?? TRANSPORT_REEL;
 	const entetes = { Authorization: `Bearer ${options.jeton}` };
 
 	const appeler = (url: string, signal?: AbortSignal) =>

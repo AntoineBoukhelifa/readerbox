@@ -19,6 +19,18 @@ import type { MotifEchec, Resultat } from './types';
 /** Un appel HTTP. `fetch` en production, une fonction de test ailleurs. */
 export type Transport = (url: string, init?: RequestInit) => Promise<Response>;
 
+/**
+ * Le transport de production — enveloppé, et c'est tout l'intérêt.
+ *
+ * Écrire `options.transport ?? fetch` **détache** la fonction de son global.
+ * Node l'accepte ; workerd non, il y lève `Illegal invocation`. Comme `lireJson`
+ * traduit toute exception en « indisponible », les deux sources tombaient
+ * ensemble en production avec un message de panne réseau, pendant que la suite
+ * de tests — qui injecte son propre transport — restait verte. L'enveloppe rend
+ * l'appel à `fetch` normal, donc lié.
+ */
+export const TRANSPORT_REEL: Transport = (url, init) => fetch(url, init);
+
 /** L'horloge et l'attente, injectables pour que les tests n'attendent pas vraiment. */
 export interface Chronometre {
 	maintenant: () => number;
@@ -129,8 +141,15 @@ export async function lireJson(url: string, options: OptionsAppel): Promise<Repo
 			headers: { Accept: 'application/json', ...options.entetes },
 			signal: options.signal
 		});
-	} catch {
+	} catch (cause) {
 		// Coupure réseau, DNS, abandon : la source est injoignable, donc réessayable.
+		//
+		// La cause est écrite avant d'être aplatie. Ce `catch` a déjà masqué un
+		// `Illegal invocation` pendant tout un déploiement : le membre lisait
+		// « la source ne répond pas », alors que le réseau n'avait jamais été
+		// touché. Le motif reste volontairement grossier côté produit — mais il ne
+		// doit plus l'être côté journal.
+		console.error('appel amont échoué', url, cause);
 		return { ok: false, motif: 'indisponible' };
 	}
 

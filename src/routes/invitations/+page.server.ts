@@ -1,87 +1,20 @@
-import { fail } from '@sveltejs/kit';
-import { desc, eq } from 'drizzle-orm';
 import { getDb } from '$lib/server/db';
-import { invitations } from '$lib/server/db/schema';
-import { createInvitation, invitationState, revokeInvitation } from '$lib/server/auth/invitations';
-import { emettreUneReconnexion } from '$lib/server/auth/reconnexion';
-import type { Actions, PageServerLoad } from './$types';
+import { nomsPresents } from '$lib/server/auth/entree';
+import type { PageServerLoad } from './$types';
 
 /**
- * Chaque membre ne voit et ne révoque que les liens qu'il a émis lui-même.
+ * Partager — ce qui reste d'un système d'invitations qui n'a plus lieu d'être.
  *
- * Ce n'est pas une hiérarchie déguisée : c'est que révoquer le lien d'un autre
- * sans le prévenir couperait quelqu'un qu'il attend. La règle « tout membre
- * peut inviter » reste entière.
+ * Les liens à usage unique ont été retirés au profit de l'entrée libre (voir
+ * `auth/entree.ts`) : il n'y a donc plus rien à émettre ni à révoquer, et la
+ * page ne fait plus qu'une chose — rappeler l'adresse et dire ce qu'elle
+ * engage. La route garde son chemin pour ne pas casser les liens déjà partagés
+ * dans le groupe.
  */
-export const load: PageServerLoad = async ({ locals, platform }) => {
+export const load: PageServerLoad = async ({ platform, url }) => {
 	const d1 = platform?.env?.DB;
-	if (!d1 || !locals.member) return { liens: [] };
-
-	const maintenant = Date.now();
-	const rangs = await getDb(d1)
-		.select()
-		.from(invitations)
-		.where(eq(invitations.createdBy, locals.member.id))
-		.orderBy(desc(invitations.createdAt));
-
 	return {
-		liens: rangs.map((invitation) => ({
-			id: invitation.id,
-			creeLe: invitation.createdAt,
-			expireLe: invitation.expiresAt,
-			etat: invitationState(invitation, maintenant)
-		}))
+		adresse: url.origin,
+		presents: d1 ? await nomsPresents(getDb(d1)) : []
 	};
-};
-
-export const actions: Actions = {
-	emettre: async ({ locals, platform, url }) => {
-		const d1 = platform?.env?.DB;
-		if (!d1 || !locals.member) return fail(401, { message: 'Session requise.' });
-
-		const emise = await createInvitation(getDb(d1), { createdBy: locals.member.id });
-		// R38 — un membre parti ne fait plus entrer personne, et la règle est
-		// vérifiée par l'émission elle-même, pas seulement par la session.
-		if (!emise.ok) return fail(403, { message: 'Tu as quitté le groupe.' });
-
-		return { lien: new URL(`/invitation/${emise.token}`, url.origin).toString() };
-	},
-
-	/**
-	 * Un lien pour se reconnecter soi-même sur un autre appareil.
-	 *
-	 * Aucun paramètre : l'identité vient de la session, donc il n'existe aucune
-	 * façon de demander un lien pour quelqu'un d'autre. C'est la même discipline
-	 * que le journal — ce qui n'est pas exprimable ne se forge pas.
-	 */
-	reconnexion: async ({ locals, platform, url }) => {
-		const d1 = platform?.env?.DB;
-		if (!d1 || !locals.member) return fail(401, { message: 'Session requise.' });
-
-		const emis = await emettreUneReconnexion(getDb(d1), locals.member.id);
-		if (!emis.ok) return fail(403, { message: 'Tu as quitté le groupe.' });
-
-		return { reconnexion: new URL(`/reconnexion/${emis.token}`, url.origin).toString() };
-	},
-
-	revoquer: async ({ request, locals, platform }) => {
-		const d1 = platform?.env?.DB;
-		if (!d1 || !locals.member) return fail(401, { message: 'Session requise.' });
-
-		const id = String((await request.formData()).get('id') ?? '');
-		const db = getDb(d1);
-
-		// Vérification de propriétaire avant l'écriture : sans elle, un identifiant
-		// forgé permettrait de révoquer le lien de quelqu'un d'autre.
-		const invitation = await db.query.invitations.findFirst({
-			where: eq(invitations.id, id)
-		});
-		if (!invitation || invitation.createdBy !== locals.member.id) {
-			return fail(404, { message: 'Lien introuvable.' });
-		}
-
-		const resultat = await revokeInvitation(db, id);
-		if (resultat !== 'révoquée') return fail(400, { message: `Lien ${resultat}.` });
-		return { revoque: true };
-	}
 };

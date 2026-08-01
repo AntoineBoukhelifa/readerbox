@@ -29,7 +29,7 @@
 					{ href: resolve('/feed'), libelle: 'Le fil' },
 					{ href: resolve('/graph'), libelle: 'Ton graphe' },
 					{ href: resolve('/member/[id]', { id: data.membre.id }), libelle: 'Ton journal' },
-					{ href: resolve('/invitations'), libelle: 'Inviter' }
+					{ href: resolve('/invitations'), libelle: 'Partager' }
 				]
 	);
 

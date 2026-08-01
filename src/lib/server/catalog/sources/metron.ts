@@ -5,6 +5,7 @@ import {
 	lireJson,
 	parametres,
 	suiteAcceptable,
+	TRANSPORT_REEL,
 	type Chronometre,
 	type Transport
 } from './http';
@@ -114,7 +115,7 @@ export interface OptionsMetron {
 
 export function creerMetron(options: OptionsMetron): AdaptateurDeSource {
 	const base = options.base ?? BASE_METRON;
-	const transport = options.transport ?? fetch;
+	const transport = options.transport ?? TRANSPORT_REEL;
 	const chronometre = options.chronometre ?? CHRONOMETRE_REEL;
 	const cadencer = creerCadence(options.cadenceMs ?? CADENCE_METRON_MS, chronometre);
 	const veille = creerVeille(chronometre);
