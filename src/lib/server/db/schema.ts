@@ -658,3 +658,45 @@ export const cascades = sqliteTable(
 
 export type EntryOrigin = typeof entryOrigins.$inferSelect;
 export type Cascade = typeof cascades.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Masquage anti-spoiler (U6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Une révélation explicite (R31) : ce membre a demandé à lire ce qui était
+ * masqué sur cette œuvre, et le sait.
+ *
+ * **Le grain est le couple membre-œuvre, pas le texte**, et c'est la lettre de
+ * R31 : « la révélation vaut pour ce membre, sur cette œuvre, et persiste ».
+ * Le grain plus fin — une ligne par texte révélé — obligerait à redemander pour
+ * chaque avis d'une même page alors que le membre a déjà accepté de se gâcher
+ * l'œuvre ; il aurait aussi besoin d'une clé étrangère vers `reviews`, ce qui
+ * ferait perdre la révélation à la suppression de l'avis et la ferait
+ * réapparaître au suivant.
+ *
+ * La table ne porte pas de colonne « annulée ». Une révélation ne se défait pas :
+ * le membre a lu le texte, et prétendre le contraire serait un affichage, pas
+ * une garantie.
+ *
+ * La clé primaire porte l'idempotence : révéler deux fois n'écrit rien de plus,
+ * ce dont dépend le fait que le bouton puisse être cliqué deux fois.
+ */
+export const reveals = sqliteTable(
+	'reveals',
+	{
+		memberId: text('member_id')
+			.notNull()
+			.references(() => members.id),
+		workId: text('work_id')
+			.notNull()
+			.references(() => works.id),
+		createdAt: integer('created_at').notNull().$defaultFn(now)
+	},
+	(table) => [
+		primaryKey({ columns: [table.memberId, table.workId] }),
+		index('reveals_member_idx').on(table.memberId)
+	]
+);
+
+export type Reveal = typeof reveals.$inferSelect;

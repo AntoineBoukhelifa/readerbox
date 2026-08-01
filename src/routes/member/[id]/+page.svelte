@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import MaskedText from '$lib/components/MaskedText.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -55,13 +56,14 @@
 							</span>
 						</div>
 						{#if entree.avis}
-							<p class="mt-1 text-sm text-neutral-700">
-								{#if entree.avis.texte === null}
-									<span class="text-neutral-400">Un avis existe.</span>
-								{:else}
-									{entree.avis.texte}
-								{/if}
-							</p>
+							<!-- La même carte que partout ailleurs : masquée ou non, elle dit
+							     qu'un avis existe et qui l'a écrit (R31). -->
+							<MaskedText
+								oeuvreId={entree.avis.oeuvreId}
+								auteur={data.membre.parti ? 'Un membre parti' : data.membre.nom}
+								masque={entree.avis.masque}
+								texte={entree.avis.texte}
+							/>
 						{/if}
 					</li>
 				{/each}

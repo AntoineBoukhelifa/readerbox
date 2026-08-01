@@ -28,6 +28,7 @@ import {
 	type MotifRefusPosition,
 	type SaisieDePosition
 } from './position';
+import { publicationAutorisee } from '../masking/visibility';
 
 /**
  * Le geste central du produit : consigner, noter, écrire un avis, retirer.
@@ -96,6 +97,8 @@ export type MotifRefusJournal =
 	| 'avis introuvable'
 	| 'avis vide'
 	| 'avis déjà écrit'
+	/** R25 — une œuvre longue non atteinte exige une position déclarée. */
+	| 'position requise'
 	| MotifRefusPosition;
 
 export type ResultatConsignation =
@@ -922,9 +925,11 @@ export async function retirer(
  * tous ceux qui l'avaient déjà lu.
  *
  * R25 — la position est obligatoire avant de publier sur une œuvre longue non
- * atteinte — n'est pas vérifiée ici : c'est une règle de masquage, elle
- * appartient à U6, et l'y placer à deux endroits reproduirait exactement le
- * défaut que KTD5 existe pour éviter.
+ * atteinte — est **décidée** par `masking/visibility.ts` et seulement appliquée
+ * ici. La règle appartient au masquage : la position qu'elle exige n'a d'autre
+ * usage que la comparaison de R29. Mais l'écriture des avis passe par cette
+ * fonction et par elle seule, donc c'est le seul endroit où l'appliquer une fois
+ * suffit à l'appliquer partout.
  */
 export async function ecrireAvis(
 	db: Db,
@@ -938,6 +943,18 @@ export async function ecrireAvis(
 
 	const existant = await db.query.reviews.findFirst({ where: eq(reviews.entryId, entree.id) });
 	if (existant) return { ok: false, motif: 'avis déjà écrit' };
+
+	const type = await typeDOeuvre(db, options.oeuvreId);
+	if (
+		type !== null &&
+		!publicationAutorisee({
+			typeOeuvre: type,
+			atteinte: estAtteinte(etatDe(entree)),
+			positionDeclaree: entree.declaredPosition
+		})
+	) {
+		return { ok: false, motif: 'position requise' };
+	}
 
 	const [ligne] = await db
 		.insert(reviews)
@@ -1039,6 +1056,103 @@ export async function lireJournal(
 			: and(eq(journalEntries.memberId, membreId), eq(journalEntries.shelf, options.etagere));
 
 	return lireEntrees(db, filtre);
+}
+
+/**
+ * Un avis tel que la page d'une œuvre en a besoin : le texte **brut**, et de
+ * quoi le signer.
+ *
+ * La forme satisfait `ContenuMasquable` de `masking/visibility.ts`, et c'est le
+ * point : ce que cette fonction rend n'est pas sérialisable tel quel. Elle lit
+ * la table, la règle décide, la surface affiche — trois étapes, trois modules,
+ * et aucun raccourci possible entre le premier et le troisième.
+ */
+export interface AvisDOeuvre {
+	id: string;
+	oeuvreId: string;
+	auteurId: string;
+	auteurNom: string;
+	/** R38 — un membre parti reste auteur de son avis, mais sans son nom. */
+	auteurParti: boolean;
+	/** R28 — la note ne traverse pas le masquage, elle l'ignore. */
+	note: number | null;
+	texte: string;
+	/** Figée à la rédaction initiale (R30). C'est elle que R29 compare. */
+	positionARedaction: number | null;
+	ecritLe: number;
+	misAJourLe: number;
+}
+
+/**
+ * Tous les avis écrits sur une œuvre, par tout le groupe.
+ *
+ * **Rien ici ne masque quoi que ce soit**, et c'est délibéré : mêler la lecture
+ * et la règle donnerait deux endroits où la règle vit. L'appelant passe le
+ * résultat à `masquer`, et `surfaces.test.ts` vérifie qu'il le fait.
+ */
+export async function lireAvisDOeuvre(db: Db, oeuvreId: string): Promise<AvisDOeuvre[]> {
+	const lignes = await db
+		.select({ avis: reviews, entree: journalEntries, membre: members })
+		.from(reviews)
+		.innerJoin(journalEntries, eq(journalEntries.id, reviews.entryId))
+		.innerJoin(members, eq(members.id, journalEntries.memberId))
+		.where(eq(journalEntries.workId, oeuvreId))
+		.orderBy(desc(reviews.createdAt), desc(reviews.id));
+
+	return lignes.map(({ avis, entree, membre }) => ({
+		id: avis.id,
+		oeuvreId: entree.workId,
+		auteurId: entree.memberId,
+		auteurNom: membre.displayName,
+		auteurParti: membre.leftAt !== null,
+		note: entree.rating,
+		texte: avis.body,
+		positionARedaction: avis.positionAtWriting,
+		ecritLe: avis.createdAt,
+		misAJourLe: avis.updatedAt
+	}));
+}
+
+/**
+ * R26 — qui du groupe a atteint l'œuvre, qui est en train de la lire, et où il
+ * en est.
+ *
+ * Aucun masquage : l'avancement d'un membre dans une œuvre n'est pas un texte,
+ * et R28 comme R26 le veulent visible. Ce qu'on apprend en le lisant — que
+ * quelqu'un est à 60 % — ne révèle rien de l'intrigue.
+ */
+export interface LecteurDOeuvre {
+	membreId: string;
+	nom: string;
+	parti: boolean;
+	etagere: Etagere;
+	abandonnee: boolean;
+	atteinte: boolean;
+	position: number;
+	note: number | null;
+}
+
+export async function lecteursDOeuvre(db: Db, oeuvreId: string): Promise<LecteurDOeuvre[]> {
+	const lignes = await db
+		.select({ entree: journalEntries, membre: members })
+		.from(journalEntries)
+		.innerJoin(members, eq(members.id, journalEntries.memberId))
+		.where(eq(journalEntries.workId, oeuvreId))
+		.orderBy(desc(journalEntries.updatedAt), desc(journalEntries.id));
+
+	return lignes.map(({ entree, membre }) => {
+		const etat = etatDe(entree);
+		return {
+			membreId: entree.memberId,
+			nom: membre.displayName,
+			parti: membre.leftAt !== null,
+			etagere: entree.shelf,
+			abandonnee: etat.abandonnee,
+			atteinte: estAtteinte(etat),
+			position: positionEffective(etat, entree.declaredPosition),
+			note: entree.rating
+		};
+	});
 }
 
 /**
