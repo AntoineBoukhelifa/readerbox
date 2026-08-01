@@ -1,0 +1,28 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "readerbox",
+	"compatibility_date": "2026-08-01",
+	"compatibility_flags": ["nodejs_als"],
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	},
+	"workers_dev": true,
+	"preview_urls": true,
+
+	// La base du groupe. `database_id` se remplit après `wrangler d1 create readerbox`,
+	// qui exige d'être authentifié sur Cloudflare. En local, wrangler monte une base
+	// SQLite dans .wrangler/ sans toucher au distant.
+	//
+	// Les clés d'API des sources ne sont pas ici : ce sont des secrets, posés par
+	// `wrangler secret put`, et en local dans .dev.vars — jamais versionnés.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "readerbox",
+			"database_id": "REMPLIR_APRES_WRANGLER_D1_CREATE",
+			"migrations_dir": "drizzle"
+		}
+	]
+}

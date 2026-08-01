@@ -67,18 +67,18 @@ Axes : 1 Catalogue & identité · 2 Boucle solo · 3 Social & partage · 4 Déco
 
 ## Clusters de convergence (dédoublonnage)
 
-| Cluster | Idées | Cadres indépendants |
-|---|---|---|
-| Ancrage positionnel / spoiler structurel | A1, B4, C3, D4 (+F2 partiel) | 4 |
-| Traducteur / Expression de première classe | A4, B1, C1, D1 | 4 |
-| Libraire indépendant comme client B2B | A5, B5, C6, D6, F5 | 5 |
-| Refus de la moyenne / duels | B3, C7, D5, F7 | 4 (2 variantes) |
-| Courbe d'abandon + B2B mesure | A3, B7, E6, D3 | 4 |
-| Intention / PAL comme donnée principale | C4, E2, E5, F4 | 4 |
-| Amorçage manga/BD | A2, C5 | 2 |
-| Catalogue événementiel / fusion réversible | D2, E1 | 2 |
-| Migration Goodreads | D7, E7 (outiller la sortie) vs B6, F1 (refuser l'import) | tension |
-| Zéro média riche / citation typographique | A6, F2 | 2 |
+| Cluster                                    | Idées                                                    | Cadres indépendants |
+| ------------------------------------------ | -------------------------------------------------------- | ------------------- |
+| Ancrage positionnel / spoiler structurel   | A1, B4, C3, D4 (+F2 partiel)                             | 4                   |
+| Traducteur / Expression de première classe | A4, B1, C1, D1                                           | 4                   |
+| Libraire indépendant comme client B2B      | A5, B5, C6, D6, F5                                       | 5                   |
+| Refus de la moyenne / duels                | B3, C7, D5, F7                                           | 4 (2 variantes)     |
+| Courbe d'abandon + B2B mesure              | A3, B7, E6, D3                                           | 4                   |
+| Intention / PAL comme donnée principale    | C4, E2, E5, F4                                           | 4                   |
+| Amorçage manga/BD                          | A2, C5                                                   | 2                   |
+| Catalogue événementiel / fusion réversible | D2, E1                                                   | 2                   |
+| Migration Goodreads                        | D7, E7 (outiller la sortie) vs B6, F1 (refuser l'import) | tension             |
+| Zéro média riche / citation typographique  | A6, F2                                                   | 2                   |
 
 Singletons : A7 (privé granulaire), E3 (liste adressée), E4 (Daf Yomi), F3 (pas de mémoire publique), F6 (email hebdo).
 

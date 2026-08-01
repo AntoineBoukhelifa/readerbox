@@ -30,17 +30,17 @@ Ces deux contraintes convergent vers une conséquence utile : **le produit ne pe
 
 Le plan couvre l'intégralité des 53 exigences du document d'origine. Traçabilité par unité ci-dessous ; aucune exigence n'est laissée de côté.
 
-| Domaine | Exigences | Unités |
-|---|---|---|
-| Journal personnel | R1-R6 | U4 |
-| Œuvres et médias | R7-R13 | U3, U4, U5 |
-| Ordres | R14-R22 | U7 |
-| Avancement dans une œuvre longue | R23-R26 | U4, U6 |
-| Masquage anti-spoiler | R27-R32 | U6, U8 |
-| États et transitions | R33-R39 | U3, U4, U5, U7, U8, U9 |
-| Le groupe | R40-R43 | U2, U4, U8 |
-| Catalogue et découverte | R44-R47 | U1, U3 |
-| Graphe de l'univers | R48-R53 | U9, U10 |
+| Domaine                          | Exigences | Unités                 |
+| -------------------------------- | --------- | ---------------------- |
+| Journal personnel                | R1-R6     | U4                     |
+| Œuvres et médias                 | R7-R13    | U3, U4, U5             |
+| Ordres                           | R14-R22   | U7                     |
+| Avancement dans une œuvre longue | R23-R26   | U4, U6                 |
+| Masquage anti-spoiler            | R27-R32   | U6, U8                 |
+| États et transitions             | R33-R39   | U3, U4, U5, U7, U8, U9 |
+| Le groupe                        | R40-R43   | U2, U4, U8             |
+| Catalogue et découverte          | R44-R47   | U1, U3                 |
+| Graphe de l'univers              | R48-R53   | U9, U10                |
 
 ---
 
@@ -210,6 +210,7 @@ La structure est une déclaration d'intention, pas une contrainte. Les listes de
 **Dépendances.** Aucune. Bloque U3, et par conséquent U9 et U10.
 
 **Fichiers.**
+
 - `docs/decisions/001-sources-de-donnees.md` (créer)
 - `src/lib/server/catalog/sources/types.ts` (créer)
 - `tests/sources.test.ts` (créer)
@@ -227,6 +228,7 @@ La structure est une déclaration d'intention, pas une contrainte. Les listes de
 **Note d'exécution.** Cette unité est une vérification, pas une construction. Sa sortie est un document de décision et une interface. Les tests ci-dessous sont des **sondes jetables** mesurant le comportement des API elles-mêmes ; les tests d'adaptateur proprement dits appartiennent à U3.
 
 **Scénarios de test.**
+
 - Une sonde par source candidate : une recherche par titre renvoie-t-elle des résultats exploitables, et sous quel format.
 - Une sonde de parcours : la liste des apparitions d'un personnage est-elle accessible, et paginée comment.
 - Une sonde sur un numéro récent : la liste de personnages est-elle présente, et de quelle taille.
@@ -247,6 +249,7 @@ La structure est une déclaration d'intention, pas une contrainte. Les listes de
 **Dépendances.** Aucune. Peut avancer en parallèle de U1.
 
 **Fichiers.**
+
 - `wrangler.toml` (créer)
 - `src/routes/+layout.svelte` (créer)
 - `src/lib/server/auth/invitations.ts` (créer)
@@ -262,6 +265,7 @@ Une invitation porte un état **révocable** : l'émetteur, ou tout autre membre
 Les clés d'API des sources sont posées comme secrets Cloudflare dès cette unité, conformément à KTD9 — jamais dans `wrangler.toml`.
 
 **Scénarios de test.**
+
 - Un lien d'invitation valide crée un membre et une session.
 - Un lien déjà consommé est refusé.
 - Un lien expiré est refusé.
@@ -284,6 +288,7 @@ Les clés d'API des sources sont posées comme secrets Cloudflare dès cette uni
 **Dépendances.** U1, U2
 
 **Fichiers.**
+
 - `src/lib/server/db/migrations/002_catalog.sql` (créer)
 - `src/lib/server/catalog/sources/metron.ts` (créer)
 - `src/lib/server/catalog/sources/tmdb.ts` (créer)
@@ -310,6 +315,7 @@ Les couvertures suivent la politique arrêtée en U1 : lien direct vers la sourc
 **Conception technique.** Orientation : `œuvre(id, type, titre, date, état_ingestion, données_source)` ; `identifiant_source(œuvre_id, source, id_externe)` ; `correction(œuvre_id, champ, valeur, membre_id)` appliquée en surcouche ; tables de liaison `œuvre_personnage`, `œuvre_série`, `œuvre_event`.
 
 **Scénarios de test.**
+
 - Une recherche interroge les sources et fusionne les résultats avec le local, sans doublon, même quand un résultat local existe déjà.
 - Une recherche répétée dans la fenêtre de cache ne redéclenche pas d'appel amont.
 - Une recherche ne persiste aucune œuvre.
@@ -338,6 +344,7 @@ Les couvertures suivent la politique arrêtée en U1 : lien direct vers la sourc
 **Dépendances.** U3
 
 **Fichiers.**
+
 - `src/lib/server/db/migrations/003_journal.sql` (créer)
 - `src/lib/server/journal/entries.ts` (créer)
 - `src/routes/work/[id]/+page.server.ts` (créer)
@@ -355,6 +362,7 @@ R33 impose que le retrait fasse reculer la progression des ordres et rétracter 
 **Note d'exécution.** Écrire d'abord le test de la frontière « atteint » : c'est le prédicat dont dépendent le masquage, les ordres et le graphe.
 
 **Scénarios de test.**
+
 - Consigner une œuvre en « à découvrir » ne la rend pas atteinte.
 - La passer en « terminé » la rend atteinte ; en « en cours » ne la rend pas atteinte.
 - L'abandon rend atteint sans exiger de note ni d'avis.
@@ -380,6 +388,7 @@ R33 impose que le retrait fasse reculer la progression des ordres et rétracter 
 **Dépendances.** U4
 
 **Fichiers.**
+
 - `src/lib/server/db/migrations/004_cascade.sql` (créer)
 - `src/lib/server/journal/cascade.ts` (créer)
 - `src/lib/server/journal/entries.ts` (modifier)
@@ -397,6 +406,7 @@ R11 restreint la cascade descendante au recueil et à la saison de série télé
 **Conception technique.** Orientation : `entrée_origine(entrée_id, type, source_œuvre_id)` avec plusieurs lignes possibles par entrée ; `cascade_en_cours(recueil_id, membre_id, dernier_numéro_traité)` pour la reprise.
 
 **Scénarios de test.**
+
 - Couvre R9. Consigner un recueil consigne ses numéros, marqués comme dérivés.
 - Terminer un recueil rend atteints ses numéros dérivés.
 - Couvre R9. Atteindre tous les numéros d'un recueil rend le recueil atteint.
@@ -422,6 +432,7 @@ R11 restreint la cascade descendante au recueil et à la saison de série télé
 **Dépendances.** U4
 
 **Fichiers.**
+
 - `src/lib/server/masking/visibility.ts` (créer)
 - `src/lib/server/db/migrations/005_reveals.sql` (créer)
 - `src/lib/components/MaskedText.svelte` (créer)
@@ -435,6 +446,7 @@ R29 ajoute la seule condition intra-œuvre, en s'appuyant sur la position normal
 **Note d'exécution.** Écrire les tests avant l'implémentation. C'est la mécanique la plus transverse du produit.
 
 **Scénarios de test.**
+
 - Couvre AE1. Un membre n'ayant pas atteint l'œuvre ne reçoit pas le texte des avis, y compris dans la charge utile brute de la réponse serveur.
 - Couvre AE2. Abandonner une œuvre rend tous ses textes visibles.
 - Couvre AE3. Note agrégée et nombre d'avis s'affichent même quand les textes sont masqués.
@@ -465,6 +477,7 @@ R29 ajoute la seule condition intra-œuvre, en s'appuyant sur la position normal
 **Dépendances.** U4, U3
 
 **Fichiers.**
+
 - `src/lib/server/db/migrations/006_orders.sql` (créer)
 - `src/lib/server/orders/progression.ts` (créer)
 - `src/lib/server/orders/orders.ts` (créer)
@@ -481,6 +494,7 @@ La progression affichée est le pourcentage d'entrées essentielles atteintes ; 
 Le versement d'œuvres dans un ordre passe par la recherche de U3, donc par les sources amont : on doit pouvoir bâtir un ordre sur des numéros que personne n'a encore consignés. Le fork copie les entrées en conservant une référence à l'original. R36 permet de cesser de suivre sans rien perdre.
 
 **Scénarios de test.**
+
 - Couvre AE4. Atteindre une œuvre présente dans trois ordres suivis fait avancer les trois.
 - Couvre AE5. Sur dix entrées essentielles dont les 1, 2, 5 et 9 sont atteintes, la progression est de 40 % et l'entrée suivante est la troisième.
 - Couvre AE6. Insérer une entrée ne retire aucune entrée de l'ensemble atteint d'un suiveur ; le pourcentage affiché baisse mécaniquement et l'entrée suivante est recalculée.
@@ -507,6 +521,7 @@ Le versement d'œuvres dans un ordre passe par la recherche de U3, donc par les 
 **Dépendances.** U6, U7
 
 **Fichiers.**
+
 - `src/lib/server/db/migrations/007_feed.sql` (créer)
 - `src/lib/server/feed/events.ts` (créer)
 - `src/routes/feed/+page.server.ts` (créer)
@@ -521,6 +536,7 @@ R42 conserve la provenance et R43 informe le membre dont une recommandation a é
 R38 traite le départ d'un membre : ses avis et notes restent, anonymisés, ses ordres restent en place marqués comme sans auteur, **et ses sessions actives sont immédiatement invalidées**, tout comme sa capacité à émettre des invitations. Sans cette invalidation, un membre parti conserverait un accès complet jusqu'à expiration naturelle de sa session.
 
 **Scénarios de test.**
+
 - Couvre AE13. Un événement portant sur une œuvre placée en « à découvrir » par le lecteur apparaît sans titre lisible.
 - Le même événement affiche son titre pour un membre qui n'a pas l'œuvre en « à découvrir ».
 - Un événement de type avis n'expose jamais le texte de l'avis dans le fil.
@@ -544,6 +560,7 @@ R38 traite le départ d'un membre : ses avis et notes restent, anonymisés, ses 
 **Dépendances.** U3, U4, U5
 
 **Fichiers.**
+
 - `src/lib/server/db/migrations/008_graph.sql` (créer)
 - `src/lib/server/graph/materialize.ts` (créer)
 - `src/lib/server/graph/rematerialize.ts` (créer)
@@ -562,6 +579,7 @@ R52 est la contrainte la plus subtile : une arête ne doit pas apparaître si le
 **Conception technique.** Orientation : `arête_visible(membre_id, nœud_a, nœud_b, type)` et `arête_appui(arête_id, œuvre_id)`.
 
 **Scénarios de test.**
+
 - Couvre AE9. Un personnage n'apparaît pas tant qu'aucune œuvre atteinte ne le fait apparaître.
 - Couvre AE10. Deux nœuds présents par ailleurs ne sont pas reliés si leur lien n'est établi que par une œuvre non atteinte.
 - Couvre AE14. Retirer une consignation qui soutenait un nœud unique le fait disparaître.
@@ -585,6 +603,7 @@ R52 est la contrainte la plus subtile : une arête ne doit pas apparaître si le
 **Dépendances.** U9, U7, U3
 
 **Fichiers.**
+
 - `src/lib/components/Graph.svelte` (créer)
 - `src/routes/graph/+page.server.ts` (créer)
 - `src/lib/server/graph/query.ts` (créer)
@@ -597,6 +616,7 @@ Le filtrage se fait par cases à cocher sur les trois dimensions, **plafonnées 
 R53 rend chaque nœud navigable vers les œuvres atteintes qui l'ont établi et vers les ordres du groupe qui les couvrent. **Un troisième volet complète l'ouverture d'un nœud : les apparitions non encore atteintes**, servies par le chemin de parcours amont de U3. Sans lui le graphe est une rétrospective de ce qu'on a déjà lu, alors que le critère de réussite du document d'origine attend qu'un membre y trouve une œuvre qu'il n'aurait pas trouvée par la recherche.
 
 **Scénarios de test.**
+
 - Couvre AE11. Activer un seul type de relation n'affiche que les arêtes de ce type.
 - Activer deux types affiche les deux ; en activer un troisième est refusé.
 - Un graphe vide — nouveau membre — affiche un état d'accueil et non une erreur.
@@ -622,17 +642,17 @@ Le mécanisme d'appuis apparaît deux fois sous des noms différents : les origi
 
 ## Risques et dépendances
 
-| Risque | Portée | Traitement |
-|---|---|---|
-| La donnée d'apparition des personnages est trop lacunaire pour que le graphe ait de l'intérêt | U9, U10 — la moitié de la valeur distinctive | Mesurée en U1 avec un seuil fixé d'avance à 70 % sur les numéros postérieurs à 2000. Sous ce seuil, la dimension personnage est abandonnée et le graphe se réduit à série et event |
-| Comic Vine ferme ou restreint son API | U3, U9 | Adaptateurs derrière une interface unique dès U1 ; Metron en primaire ; la donnée déjà ingérée reste en base |
-| Licence de Metron ou de Comic Vine incompatible avec le stockage local | U1, U3 | Bloquant par construction. Le repli sur la Grand Comics Database est un changement d'architecture — import de dump, pas d'API de recherche — qui invalide KTD1 et doit être traité comme tel |
-| Une cascade dépasse le temps processeur ou le plafond de sous-requêtes | U5, U9 | Fractionnement idempotent par lots, état de progression visible, reprise par Cron Trigger. Volume chiffré depuis les mesures de U1 |
-| Le plafond de 100 000 écritures quotidiennes est atteint | U3, U9 | L'ingestion paresseuse borne le catalogue, mais les appuis d'arête sont par membre : c'est ce volume qu'il faut surveiller, pas celui du catalogue |
-| Le quota amont est épuisé par la recherche de vingt membres | U3 | Cache court des réponses de recherche, mesuré en U1 pour un usage à vingt derrière une clé unique |
-| La réconciliation produit des doublons visibles | U3 | Ne jamais fusionner en cas de doute ; fusion manuelle par un membre, qui rejoue la matérialisation du graphe |
-| Personne ne crée d'ordre | U7 — la promesse centrale | Hors de portée technique. Le jalon de fin de phase 1 existe pour confronter l'hypothèse à un usage réel avant d'investir dans U7 à U10 |
-| Le groupe ne suit pas Marvel | Le projet entier | Assumé en connaissance de cause. Même traitement : le jalon de phase 1 est le premier moment où ça se voit |
+| Risque                                                                                        | Portée                                       | Traitement                                                                                                                                                                                   |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| La donnée d'apparition des personnages est trop lacunaire pour que le graphe ait de l'intérêt | U9, U10 — la moitié de la valeur distinctive | Mesurée en U1 avec un seuil fixé d'avance à 70 % sur les numéros postérieurs à 2000. Sous ce seuil, la dimension personnage est abandonnée et le graphe se réduit à série et event           |
+| Comic Vine ferme ou restreint son API                                                         | U3, U9                                       | Adaptateurs derrière une interface unique dès U1 ; Metron en primaire ; la donnée déjà ingérée reste en base                                                                                 |
+| Licence de Metron ou de Comic Vine incompatible avec le stockage local                        | U1, U3                                       | Bloquant par construction. Le repli sur la Grand Comics Database est un changement d'architecture — import de dump, pas d'API de recherche — qui invalide KTD1 et doit être traité comme tel |
+| Une cascade dépasse le temps processeur ou le plafond de sous-requêtes                        | U5, U9                                       | Fractionnement idempotent par lots, état de progression visible, reprise par Cron Trigger. Volume chiffré depuis les mesures de U1                                                           |
+| Le plafond de 100 000 écritures quotidiennes est atteint                                      | U3, U9                                       | L'ingestion paresseuse borne le catalogue, mais les appuis d'arête sont par membre : c'est ce volume qu'il faut surveiller, pas celui du catalogue                                           |
+| Le quota amont est épuisé par la recherche de vingt membres                                   | U3                                           | Cache court des réponses de recherche, mesuré en U1 pour un usage à vingt derrière une clé unique                                                                                            |
+| La réconciliation produit des doublons visibles                                               | U3                                           | Ne jamais fusionner en cas de doute ; fusion manuelle par un membre, qui rejoue la matérialisation du graphe                                                                                 |
+| Personne ne crée d'ordre                                                                      | U7 — la promesse centrale                    | Hors de portée technique. Le jalon de fin de phase 1 existe pour confronter l'hypothèse à un usage réel avant d'investir dans U7 à U10                                                       |
+| Le groupe ne suit pas Marvel                                                                  | Le projet entier                             | Assumé en connaissance de cause. Même traitement : le jalon de phase 1 est le premier moment où ça se voit                                                                                   |
 
 ---
 
