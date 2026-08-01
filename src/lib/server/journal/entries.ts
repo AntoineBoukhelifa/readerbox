@@ -1,0 +1,737 @@
+import { and, avg, count, desc, eq, inArray, isNotNull, ne, type SQL } from 'drizzle-orm';
+import {
+	journalEntries,
+	members,
+	reviews,
+	works,
+	type JournalEntry,
+	type OrigineDeConsignation
+} from '../db/schema';
+import type { Db } from '../db';
+import type { TypeOeuvre } from '../catalog/sources/types';
+import { titresCorriges } from '../catalog/corrections';
+import { estAtteinte, franchissement, type Etagere, type SensDeFranchissement } from './atteinte';
+import { signalerFranchissement } from './frontiere';
+import {
+	normaliserPosition,
+	positionEffective,
+	type MotifRefusPosition,
+	type SaisieDePosition
+} from './position';
+
+/**
+ * Le geste central du produit : consigner, noter, écrire un avis, retirer.
+ *
+ * **Ce module est le seul à écrire dans `journal_entries`.** C'est ce qui donne
+ * son sens au point d'appel unique : chaque mutation d'état de lecture passe par
+ * `signalerLeFranchissement`, donc aucune surface ne peut oublier de notifier
+ * les mécaniques qui en dépendent (U6, U7, U9). Une écriture directe depuis une
+ * route ou depuis une autre unité contournerait la notification, et le défaut
+ * serait silencieux — un graphe qui ne s'étend plus, un ordre qui n'avance plus,
+ * sans aucun message d'erreur nulle part.
+ *
+ * **Rien ne lève d'exception pour un refus attendu.** Une œuvre inconnue, une
+ * note invalide, un avis qui n'est pas le sien sont des réponses typées, comme
+ * en U2 et U3a.
+ *
+ * **Les opérations sont désignées par le couple membre-œuvre, pas par
+ * l'identifiant de l'entrée.** Ce n'est pas un détail de commodité : c'est ce
+ * qui rend structurellement impossible d'agir sur la consignation d'un autre
+ * par manipulation d'identifiant. Là où un identifiant est inévitable — l'avis,
+ * que R37 désigne nommément — la propriété est vérifiée avant toute écriture, et
+ * un avis qui n'appartient pas au membre est rapporté « introuvable » : lui dire
+ * qu'il existe mais qu'il est refusé lui apprendrait déjà quelque chose.
+ */
+
+// ---------------------------------------------------------------------------
+// Note (R4)
+// ---------------------------------------------------------------------------
+
+export const NOTE_MIN = 0.5;
+export const NOTE_MAX = 5;
+
+/**
+ * Une note valide : de 0,5 à 5 étoiles, par demi-étoiles (R4).
+ *
+ * Zéro n'est pas une note mais une absence de note, et c'est `null` qui la
+ * porte : accepter zéro donnerait deux façons de dire « je n'ai pas noté », dont
+ * l'une entrerait dans l'agrégat du groupe et le tirerait vers le bas.
+ */
+export function noteValide(note: number): boolean {
+	return (
+		Number.isFinite(note) && note >= NOTE_MIN && note <= NOTE_MAX && Number.isInteger(note * 2)
+	);
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/** La provenance d'une consignation (R42), telle que la surface la déclare. */
+export type ProvenanceDeclaree =
+	{ type: 'membre'; membreId: string } | { type: 'ordre'; ordreId: string } | { type: 'catalogue' };
+
+export type MotifRefusJournal =
+	| 'œuvre introuvable'
+	| 'membre introuvable'
+	| 'consignation introuvable'
+	| 'note invalide'
+	| 'avis introuvable'
+	| 'avis vide'
+	| 'avis déjà écrit'
+	| MotifRefusPosition;
+
+export type ResultatConsignation =
+	| {
+			ok: true;
+			entreeId: string;
+			atteinte: boolean;
+			/** Le sens franchi, ou `null` si la frontière n'a pas bougé. */
+			franchissement: SensDeFranchissement | null;
+	  }
+	| { ok: false; motif: MotifRefusJournal };
+
+export type ResultatRetrait =
+	| {
+			ok: true;
+			franchissement: SensDeFranchissement | null;
+			/** R33 — ce que le retrait a emporté avec lui. */
+			noteSupprimee: boolean;
+			avisSupprime: boolean;
+	  }
+	| { ok: false; motif: MotifRefusJournal };
+
+export type ResultatAvis = { ok: true; avisId: string } | { ok: false; motif: MotifRefusJournal };
+
+export interface AvisDeJournal {
+	id: string;
+	texte: string;
+	/** Figée à la rédaction initiale (R30) ; U6 s'en servira pour R29. */
+	positionARedaction: number | null;
+	ecritLe: number;
+	misAJourLe: number;
+}
+
+export interface EntreeDeJournal {
+	entreeId: string;
+	membreId: string;
+	oeuvre: { id: string; titre: string; type: TypeOeuvre };
+	etagere: Etagere;
+	abandonnee: boolean;
+	/** Dérivé, jamais lu depuis la base (R3). */
+	atteinte: boolean;
+	/** La position effective de R24, dans [0, 1]. */
+	position: number;
+	positionDeclaree: number | null;
+	longueurTotale: number | null;
+	note: number | null;
+	avis: AvisDeJournal | null;
+	provenance: ProvenanceDeclaree;
+	origine: OrigineDeConsignation;
+	consigneeLe: number;
+	misAJourLe: number;
+}
+
+// ---------------------------------------------------------------------------
+// Écritures
+// ---------------------------------------------------------------------------
+
+/** L'état de lecture d'une entrée. La seule lecture de l'abandon dans ce module. */
+function etatDe(entree: JournalEntry) {
+	return { etagere: entree.shelf, abandonnee: entree.abandonedAt !== null };
+}
+
+/**
+ * Le passage obligé de toute modification d'état de lecture.
+ *
+ * Compare l'avant et l'après **par le prédicat**, jamais par les champs, et
+ * n'enfile une demande que si la frontière a réellement été franchie.
+ */
+async function signalerLeFranchissement(
+	db: Db,
+	membreId: string,
+	oeuvreId: string,
+	avant: JournalEntry | null,
+	apres: JournalEntry | null,
+	now: number
+): Promise<SensDeFranchissement | null> {
+	const sens = franchissement(
+		avant === null ? null : etatDe(avant),
+		apres === null ? null : etatDe(apres)
+	);
+	if (sens !== null) await signalerFranchissement(db, { membreId, oeuvreId, sens }, now);
+	return sens;
+}
+
+async function entreeDe(db: Db, membreId: string, oeuvreId: string): Promise<JournalEntry | null> {
+	const ligne = await db.query.journalEntries.findFirst({
+		where: and(eq(journalEntries.memberId, membreId), eq(journalEntries.workId, oeuvreId))
+	});
+	return ligne ?? null;
+}
+
+/**
+ * Consigne une œuvre sur une étagère (R1), ou déplace une consignation
+ * existante.
+ *
+ * Consigner deux fois la même œuvre ne crée pas une seconde entrée : le couple
+ * membre-œuvre est unique, et la seconde consignation déplace l'étagère. C'est
+ * la lecture littérale du vocabulaire — consigner, c'est poser sur une étagère —
+ * et ça évite d'avoir à traiter deux entrées contradictoires pour le même couple
+ * dans le masquage, les ordres et le graphe.
+ *
+ * **La provenance ne se réécrit pas** (R42). Elle est celle de la première
+ * consignation : le membre qui a recommandé l'œuvre l'a recommandée, et une
+ * reconsignation depuis le catalogue ne peut pas effacer ce fait sans casser
+ * R43, qui veut l'informer quand l'œuvre est atteinte.
+ *
+ * **Poser explicitement une étagère lève l'abandon.** L'abandon est un état
+ * distinct des trois étagères (R2), pas une quatrième position : y remettre une
+ * œuvre, c'est reprendre sa lecture — c'est exactement R35, et le franchissement
+ * en sens inverse est notifié comme tel.
+ */
+export async function consigner(
+	db: Db,
+	options: {
+		membreId: string;
+		oeuvreId: string;
+		etagere?: Etagere;
+		provenance?: ProvenanceDeclaree;
+		now?: number;
+	}
+): Promise<ResultatConsignation> {
+	const now = options.now ?? Date.now();
+	const etagere = options.etagere ?? 'a_decouvrir';
+	const provenance = options.provenance ?? { type: 'catalogue' };
+
+	const oeuvre = await db.query.works.findFirst({ where: eq(works.id, options.oeuvreId) });
+	if (!oeuvre) return { ok: false, motif: 'œuvre introuvable' };
+
+	const membre = await db.query.members.findFirst({ where: eq(members.id, options.membreId) });
+	if (!membre) return { ok: false, motif: 'membre introuvable' };
+
+	if (provenance.type === 'membre') {
+		const source = await db.query.members.findFirst({
+			where: eq(members.id, provenance.membreId)
+		});
+		if (!source) return { ok: false, motif: 'membre introuvable' };
+	}
+
+	const avant = await entreeDe(db, options.membreId, options.oeuvreId);
+
+	const [apres] = avant
+		? await db
+				.update(journalEntries)
+				.set({ shelf: etagere, abandonedAt: null, updatedAt: now })
+				.where(eq(journalEntries.id, avant.id))
+				.returning()
+		: await db
+				.insert(journalEntries)
+				.values({
+					memberId: options.membreId,
+					workId: options.oeuvreId,
+					shelf: etagere,
+					provenance: provenance.type,
+					provenanceMemberId: provenance.type === 'membre' ? provenance.membreId : null,
+					provenanceOrderId: provenance.type === 'ordre' ? provenance.ordreId : null,
+					origin: 'directe',
+					createdAt: now,
+					updatedAt: now
+				})
+				.returning();
+
+	const sens = await signalerLeFranchissement(
+		db,
+		options.membreId,
+		options.oeuvreId,
+		avant,
+		apres,
+		now
+	);
+
+	return {
+		ok: true,
+		entreeId: apres.id,
+		atteinte: estAtteinte(etatDe(apres)),
+		franchissement: sens
+	};
+}
+
+/**
+ * Abandonne une œuvre (R2). L'abandon **atteint** l'œuvre (R3) et n'exige ni
+ * note ni avis — le dire dans le code serait déjà de trop, c'est l'absence de
+ * toute vérification qui le garantit.
+ *
+ * L'étagère sous l'abandon est conservée : elle dit où le membre en était, et
+ * c'est elle qu'il retrouve s'il reprend.
+ */
+export async function abandonner(
+	db: Db,
+	options: { membreId: string; oeuvreId: string; now?: number }
+): Promise<ResultatConsignation> {
+	const now = options.now ?? Date.now();
+	const avant = await entreeDe(db, options.membreId, options.oeuvreId);
+	if (!avant) return { ok: false, motif: 'consignation introuvable' };
+
+	const [apres] = await db
+		.update(journalEntries)
+		.set({ abandonedAt: avant.abandonedAt ?? now, updatedAt: now })
+		.where(eq(journalEntries.id, avant.id))
+		.returning();
+
+	const sens = await signalerLeFranchissement(
+		db,
+		options.membreId,
+		options.oeuvreId,
+		avant,
+		apres,
+		now
+	);
+
+	return {
+		ok: true,
+		entreeId: apres.id,
+		atteinte: estAtteinte(etatDe(apres)),
+		franchissement: sens
+	};
+}
+
+/**
+ * R35 — un membre reprend une œuvre abandonnée : elle repasse en cours et cesse
+ * d'être atteinte, avec les conséquences correspondantes sur le masquage, les
+ * ordres et le graphe.
+ *
+ * Vaut aussi pour une œuvre terminée qu'on se remet à lire. La position déclarée
+ * n'est pas effacée : elle redevient simplement la position effective (R24), et
+ * le membre retrouve où il en était.
+ */
+export async function reprendre(
+	db: Db,
+	options: { membreId: string; oeuvreId: string; now?: number }
+): Promise<ResultatConsignation> {
+	const now = options.now ?? Date.now();
+	const avant = await entreeDe(db, options.membreId, options.oeuvreId);
+	if (!avant) return { ok: false, motif: 'consignation introuvable' };
+
+	const [apres] = await db
+		.update(journalEntries)
+		.set({ shelf: 'en_cours', abandonedAt: null, updatedAt: now })
+		.where(eq(journalEntries.id, avant.id))
+		.returning();
+
+	const sens = await signalerLeFranchissement(
+		db,
+		options.membreId,
+		options.oeuvreId,
+		avant,
+		apres,
+		now
+	);
+
+	return {
+		ok: true,
+		entreeId: apres.id,
+		atteinte: estAtteinte(etatDe(apres)),
+		franchissement: sens
+	};
+}
+
+/**
+ * Déclare l'avancement dans une œuvre longue (R23).
+ *
+ * La saisie est normalisée à l'entrée : ce qui est stocké est une fraction, que
+ * la saisie ait été faite en pages ou en pourcentage. C'est ce qui rendra R29
+ * calculable en U6, entre deux membres qui n'ont pas saisi dans la même unité.
+ *
+ * Déclarer une position sur une œuvre « à découvrir » la passe **en cours** :
+ * R24 dit que la position d'une œuvre non commencée est nulle, donc la déclarer
+ * sans commencer l'œuvre serait un geste sans effet, que rien à l'écran
+ * n'expliquerait. Le déplacement ne franchit aucune frontière — les deux
+ * étagères sont hors atteinte.
+ */
+export async function declarerPosition(
+	db: Db,
+	options: { membreId: string; oeuvreId: string; saisie: SaisieDePosition; now?: number }
+): Promise<ResultatConsignation> {
+	const now = options.now ?? Date.now();
+	const entree = await entreeDe(db, options.membreId, options.oeuvreId);
+	if (!entree) return { ok: false, motif: 'consignation introuvable' };
+
+	const normalisee = normaliserPosition(options.saisie, { longueurTotale: entree.totalLength });
+	if (!normalisee.ok) return { ok: false, motif: normalisee.motif };
+
+	const [apres] = await db
+		.update(journalEntries)
+		.set({
+			declaredPosition: normalisee.position,
+			totalLength: normalisee.longueurTotale ?? entree.totalLength,
+			shelf: entree.shelf === 'a_decouvrir' ? 'en_cours' : entree.shelf,
+			updatedAt: now
+		})
+		.where(eq(journalEntries.id, entree.id))
+		.returning();
+
+	const sens = await signalerLeFranchissement(
+		db,
+		options.membreId,
+		options.oeuvreId,
+		entree,
+		apres,
+		now
+	);
+
+	return {
+		ok: true,
+		entreeId: apres.id,
+		atteinte: estAtteinte(etatDe(apres)),
+		franchissement: sens
+	};
+}
+
+/**
+ * Note une œuvre consignée (R4), ou retire la note en passant `null` (R37).
+ *
+ * Indépendante de l'avis : l'un n'exige pas l'autre (R5). Indépendante de
+ * l'atteinte aussi — on note une œuvre abandonnée à mi-parcours, et R2 dit
+ * expressément que l'abandon n'exige pas de note.
+ */
+export async function noter(
+	db: Db,
+	options: { membreId: string; oeuvreId: string; note: number | null; now?: number }
+): Promise<ResultatConsignation> {
+	const now = options.now ?? Date.now();
+	if (options.note !== null && !noteValide(options.note)) {
+		return { ok: false, motif: 'note invalide' };
+	}
+
+	const entree = await entreeDe(db, options.membreId, options.oeuvreId);
+	if (!entree) return { ok: false, motif: 'consignation introuvable' };
+
+	await db
+		.update(journalEntries)
+		.set({ rating: options.note, updatedAt: now })
+		.where(eq(journalEntries.id, entree.id));
+
+	// Noter ne touche ni à l'étagère ni à l'abandon : aucune frontière ne bouge.
+	return {
+		ok: true,
+		entreeId: entree.id,
+		atteinte: estAtteinte(etatDe(entree)),
+		franchissement: null
+	};
+}
+
+/**
+ * R33 — retire une consignation, et emporte la note et l'avis attachés.
+ *
+ * Le recul de la progression des ordres et la rétraction du graphe sont les deux
+ * autres conséquences exigées ; elles appartiennent à U7 et U9 et arrivent par
+ * le franchissement notifié ici. La progression n'étant jamais stockée, elle
+ * recule d'elle-même ; le graphe, lui, est matérialisé et a besoin de la
+ * demande.
+ *
+ * L'avis est supprimé explicitement plutôt que par cascade de clé étrangère :
+ * R33 est une règle du produit, pas un détail de moteur, et une cascade la
+ * rendrait invisible dans le code comme dans les tests.
+ */
+export async function retirer(
+	db: Db,
+	options: { membreId: string; oeuvreId: string; now?: number }
+): Promise<ResultatRetrait> {
+	const now = options.now ?? Date.now();
+	const entree = await entreeDe(db, options.membreId, options.oeuvreId);
+	if (!entree) return { ok: false, motif: 'consignation introuvable' };
+
+	const avis = await db.query.reviews.findFirst({ where: eq(reviews.entryId, entree.id) });
+
+	await db.delete(reviews).where(eq(reviews.entryId, entree.id));
+	await db.delete(journalEntries).where(eq(journalEntries.id, entree.id));
+
+	const sens = await signalerLeFranchissement(
+		db,
+		options.membreId,
+		options.oeuvreId,
+		entree,
+		null,
+		now
+	);
+
+	return {
+		ok: true,
+		franchissement: sens,
+		noteSupprimee: entree.rating !== null,
+		avisSupprime: avis !== undefined
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Avis (R5, R30, R37)
+// ---------------------------------------------------------------------------
+
+/**
+ * Écrit un avis en texte libre (R5), au plus un par œuvre consignée.
+ *
+ * La position de l'auteur est figée maintenant, et ne bougera plus (R30) :
+ * `modifierAvis` n'y touche pas. Sans ce gel, un membre qui corrige une faute
+ * de frappe après avoir fini l'œuvre re-masquerait rétroactivement son texte à
+ * tous ceux qui l'avaient déjà lu.
+ *
+ * R25 — la position est obligatoire avant de publier sur une œuvre longue non
+ * atteinte — n'est pas vérifiée ici : c'est une règle de masquage, elle
+ * appartient à U6, et l'y placer à deux endroits reproduirait exactement le
+ * défaut que KTD5 existe pour éviter.
+ */
+export async function ecrireAvis(
+	db: Db,
+	options: { membreId: string; oeuvreId: string; texte: string; now?: number }
+): Promise<ResultatAvis> {
+	const now = options.now ?? Date.now();
+	if (options.texte.trim() === '') return { ok: false, motif: 'avis vide' };
+
+	const entree = await entreeDe(db, options.membreId, options.oeuvreId);
+	if (!entree) return { ok: false, motif: 'consignation introuvable' };
+
+	const existant = await db.query.reviews.findFirst({ where: eq(reviews.entryId, entree.id) });
+	if (existant) return { ok: false, motif: 'avis déjà écrit' };
+
+	const [ligne] = await db
+		.insert(reviews)
+		.values({
+			entryId: entree.id,
+			body: options.texte,
+			positionAtWriting: positionEffective(etatDe(entree), entree.declaredPosition),
+			createdAt: now,
+			updatedAt: now
+		})
+		.returning({ id: reviews.id });
+
+	return { ok: true, avisId: ligne.id };
+}
+
+/**
+ * R37 — un membre modifie son propre avis.
+ *
+ * La position enregistrée n'est pas recalculée : c'est celle de la rédaction
+ * initiale (R30).
+ */
+export async function modifierAvis(
+	db: Db,
+	options: { membreId: string; avisId: string; texte: string; now?: number }
+): Promise<ResultatAvis> {
+	const now = options.now ?? Date.now();
+	if (options.texte.trim() === '') return { ok: false, motif: 'avis vide' };
+
+	const avis = await avisPossede(db, options.membreId, options.avisId);
+	if (!avis) return { ok: false, motif: 'avis introuvable' };
+
+	await db
+		.update(reviews)
+		.set({ body: options.texte, updatedAt: now })
+		.where(eq(reviews.id, options.avisId));
+
+	return { ok: true, avisId: options.avisId };
+}
+
+/** R37 — un membre supprime son propre avis, sans perdre sa consignation ni sa note. */
+export async function supprimerAvis(
+	db: Db,
+	options: { membreId: string; avisId: string }
+): Promise<ResultatAvis> {
+	const avis = await avisPossede(db, options.membreId, options.avisId);
+	if (!avis) return { ok: false, motif: 'avis introuvable' };
+
+	await db.delete(reviews).where(eq(reviews.id, options.avisId));
+	return { ok: true, avisId: options.avisId };
+}
+
+/**
+ * L'avis désigné, s'il appartient bien à ce membre.
+ *
+ * Un avis qui existe mais appartient à quelqu'un d'autre est traité comme
+ * inexistant : c'est la seule vérification, elle est faite avant toute écriture,
+ * et elle ne renvoie pas d'information différente selon le cas.
+ */
+async function avisPossede(db: Db, membreId: string, avisId: string) {
+	const [ligne] = await db
+		.select({ id: reviews.id })
+		.from(reviews)
+		.innerJoin(journalEntries, eq(journalEntries.id, reviews.entryId))
+		.where(and(eq(reviews.id, avisId), eq(journalEntries.memberId, membreId)));
+	return ligne ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Lectures
+// ---------------------------------------------------------------------------
+
+/** La consignation d'un membre sur une œuvre, telle que les surfaces la lisent. */
+export async function lireConsignation(
+	db: Db,
+	membreId: string,
+	oeuvreId: string
+): Promise<EntreeDeJournal | null> {
+	const entrees = await lireEntrees(
+		db,
+		and(eq(journalEntries.memberId, membreId), eq(journalEntries.workId, oeuvreId))
+	);
+	return entrees[0] ?? null;
+}
+
+/**
+ * R6 — le journal d'un membre : ce qu'il consigne, ses notes, ses avis.
+ *
+ * Les ordres qu'il suit et ceux qu'il a créés complètent la page ; ils
+ * appartiennent à U7.
+ */
+export async function lireJournal(
+	db: Db,
+	membreId: string,
+	options: { etagere?: Etagere } = {}
+): Promise<EntreeDeJournal[]> {
+	const filtre =
+		options.etagere === undefined
+			? eq(journalEntries.memberId, membreId)
+			: and(eq(journalEntries.memberId, membreId), eq(journalEntries.shelf, options.etagere));
+
+	return lireEntrees(db, filtre);
+}
+
+/**
+ * L'assemblage commun, en quatre requêtes quelle que soit la taille du journal.
+ *
+ * Le nombre de requêtes est constant et non proportionnel au nombre d'entrées :
+ * un membre qui a consigné trois cents numéros — ce que le document d'origine
+ * décrit comme le rythme normal d'un lecteur de comics — ne doit pas coûter
+ * trois cents allers-retours dans les 10 ms d'une invocation.
+ */
+async function lireEntrees(db: Db, filtre: SQL | undefined): Promise<EntreeDeJournal[]> {
+	const lignes = await db
+		.select({ entree: journalEntries, type: works.type })
+		.from(journalEntries)
+		.innerJoin(works, eq(works.id, journalEntries.workId))
+		.where(filtre)
+		.orderBy(desc(journalEntries.updatedAt), desc(journalEntries.id));
+
+	if (lignes.length === 0) return [];
+
+	const [titres, avis] = await Promise.all([
+		titresCorriges(
+			db,
+			lignes.map((l) => l.entree.workId)
+		),
+		db.query.reviews.findMany({
+			where: inArray(
+				reviews.entryId,
+				lignes.map((l) => l.entree.id)
+			)
+		})
+	]);
+
+	const parEntree = new Map(avis.map((a) => [a.entryId, a]));
+
+	return lignes.map(({ entree, type }) => {
+		const etat = etatDe(entree);
+		const ecrit = parEntree.get(entree.id);
+
+		return {
+			entreeId: entree.id,
+			membreId: entree.memberId,
+			oeuvre: { id: entree.workId, titre: titres.get(entree.workId) ?? '', type },
+			etagere: entree.shelf,
+			abandonnee: etat.abandonnee,
+			atteinte: estAtteinte(etat),
+			position: positionEffective(etat, entree.declaredPosition),
+			positionDeclaree: entree.declaredPosition,
+			longueurTotale: entree.totalLength,
+			note: entree.rating,
+			avis: ecrit
+				? {
+						id: ecrit.id,
+						texte: ecrit.body,
+						positionARedaction: ecrit.positionAtWriting,
+						ecritLe: ecrit.createdAt,
+						misAJourLe: ecrit.updatedAt
+					}
+				: null,
+			provenance: provenanceDe(entree),
+			origine: entree.origin,
+			consigneeLe: entree.createdAt,
+			misAJourLe: entree.updatedAt
+		};
+	});
+}
+
+function provenanceDe(entree: JournalEntry): ProvenanceDeclaree {
+	if (entree.provenance === 'membre' && entree.provenanceMemberId !== null) {
+		return { type: 'membre', membreId: entree.provenanceMemberId };
+	}
+	if (entree.provenance === 'ordre' && entree.provenanceOrderId !== null) {
+		return { type: 'ordre', ordreId: entree.provenanceOrderId };
+	}
+	return { type: 'catalogue' };
+}
+
+// ---------------------------------------------------------------------------
+// Agrégats (R13)
+// ---------------------------------------------------------------------------
+
+export interface Agregat {
+	/** `null` quand personne n'a noté : zéro serait une note, et une mauvaise. */
+	noteMoyenne: number | null;
+	nombreDeNotes: number;
+	nombreDAvis: number;
+}
+
+/**
+ * R13 — les notes et les avis s'agrègent au niveau de l'œuvre consignée.
+ *
+ * C'est aussi l'agrégat propre d'un recueil, distinct de celui de ses numéros :
+ * un omnibus se note pour ce qu'il est, sélection et édition comprises.
+ *
+ * R28 en fera la donnée qui traverse toujours le masquage : les notes, leur
+ * agrégat et le nombre d'avis ne sont jamais masqués — seuls les textes le sont.
+ */
+export async function agregatDOeuvre(db: Db, oeuvreId: string): Promise<Agregat> {
+	return agregatSur(db, eq(journalEntries.workId, oeuvreId));
+}
+
+/**
+ * R13 — la page d'une série affiche l'agrégat de ses numéros.
+ *
+ * L'œuvre de type `serie` elle-même est exclue : elle porte le même
+ * `seriesEntityId` que ses numéros (c'est ainsi que U3a modélise
+ * l'appartenance), mais sa propre note est celle de la série prise comme un
+ * tout, pas une note de numéro. La compter reviendrait à faire peser un avis
+ * global au même poids qu'un numéro, et à la faire apparaître deux fois sur la
+ * page qui affiche les deux.
+ */
+export async function agregatDeSerie(db: Db, serieEntityId: string): Promise<Agregat> {
+	const numeros = db
+		.select({ id: works.id })
+		.from(works)
+		.where(and(eq(works.seriesEntityId, serieEntityId), ne(works.type, 'serie')));
+
+	return agregatSur(db, inArray(journalEntries.workId, numeros));
+}
+
+async function agregatSur(db: Db, filtre: SQL): Promise<Agregat> {
+	const [notes] = await db
+		.select({
+			moyenne: avg(journalEntries.rating),
+			nombre: count(journalEntries.rating)
+		})
+		.from(journalEntries)
+		.where(and(filtre, isNotNull(journalEntries.rating)));
+
+	const [avis] = await db
+		.select({ nombre: count() })
+		.from(reviews)
+		.innerJoin(journalEntries, eq(journalEntries.id, reviews.entryId))
+		.where(filtre);
+
+	return {
+		noteMoyenne: notes.moyenne === null ? null : Number(notes.moyenne),
+		nombreDeNotes: notes.nombre,
+		nombreDAvis: avis.nombre
+	};
+}

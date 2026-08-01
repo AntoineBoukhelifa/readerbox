@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import {
 	entities,
 	workCharacters,
@@ -374,6 +374,43 @@ export async function lireOeuvre(db: Db, oeuvreId: string): Promise<OeuvreLocale
 	const noms = await chargerNoms(db, corrections.flatMap(entitesDesignees));
 
 	return appliquerCorrections(base, corrections, noms);
+}
+
+/**
+ * Les titres de plusieurs œuvres d'un coup, corrections appliquées.
+ *
+ * `lireOeuvre` est la lecture juste mais coûteuse : sept requêtes par œuvre.
+ * Une surface qui affiche une liste — le journal d'un membre (R6), un ordre, le
+ * fil — n'a besoin que du titre, et le lui faire payer en `lireOeuvre` mettrait
+ * trois cents requêtes dans les 10 ms de temps processeur d'une invocation.
+ *
+ * Le titre corrigé plutôt que le titre de source : afficher la fiche fausse que
+ * le membre a justement corrigée (R47) est un défaut visible, et R39 veut que
+ * la correction tienne partout, pas seulement sur la page de l'œuvre.
+ */
+export async function titresCorriges(db: Db, oeuvreIds: string[]): Promise<Map<string, string>> {
+	const uniques = [...new Set(oeuvreIds)];
+	if (uniques.length === 0) return new Map();
+
+	const [oeuvres, lignes] = await Promise.all([
+		db.select({ id: works.id, titre: works.title }).from(works).where(inArray(works.id, uniques)),
+		db.query.workCorrections.findMany({
+			where: and(inArray(workCorrections.workId, uniques), eq(workCorrections.field, 'titre')),
+			orderBy: [asc(workCorrections.createdAt), asc(workCorrections.id)]
+		})
+	]);
+
+	const titres = new Map(oeuvres.map((o) => [o.id, o.titre]));
+
+	// La plus récente l'emporte, et une correction illisible est ignorée plutôt
+	// que de faire disparaître le titre — même règle qu'à la lecture complète.
+	for (const ligne of lignes) {
+		for (const correction of corrigeesDe([ligne])) {
+			if (correction.champ === 'titre') titres.set(ligne.workId, correction.valeur);
+		}
+	}
+
+	return titres;
 }
 
 /**

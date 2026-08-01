@@ -1,0 +1,85 @@
+<script lang="ts">
+	import { resolve } from '$app/paths';
+	import type { PageProps } from './$types';
+
+	let { data }: PageProps = $props();
+
+	/** Les trois étagères de R1, dans l'ordre où on les lit. L'abandon est à part (R2). */
+	const RAYONS = [
+		{ etagere: 'en_cours' as const, titre: 'En cours' },
+		{ etagere: 'termine' as const, titre: 'Terminé' },
+		{ etagere: 'a_decouvrir' as const, titre: 'À découvrir' }
+	];
+
+	const abandonnees = $derived(data.entrees.filter((entree) => entree.abandonnee));
+
+	function rayon(etagere: (typeof RAYONS)[number]['etagere']) {
+		return data.entrees.filter((entree) => !entree.abandonnee && entree.etagere === etagere);
+	}
+
+	/** La note en étoiles, demi-étoiles comprises (R4). */
+	function etoiles(note: number): string {
+		return '★'.repeat(Math.floor(note)) + (note % 1 === 0.5 ? '½' : '');
+	}
+
+	const pourcentage = (position: number) => `${Math.round(position * 100)} %`;
+</script>
+
+<svelte:head><title>Journal de {data.membre.nom} — readerbox</title></svelte:head>
+
+<main class="mx-auto max-w-2xl px-6 py-16">
+	<a href={resolve('/')} class="text-sm text-neutral-500 underline underline-offset-4">Retour</a>
+
+	<h1 class="mt-6 text-2xl font-semibold tracking-tight">
+		Journal de {data.membre.parti ? 'un membre parti' : data.membre.nom}
+	</h1>
+
+	{#if data.entrees.length === 0}
+		<p class="mt-4 text-sm text-neutral-500">Rien de consigné pour l’instant.</p>
+	{/if}
+
+	{#each RAYONS as { etagere, titre } (etagere)}
+		{@const entrees = rayon(etagere)}
+		{#if entrees.length > 0}
+			<h2 class="mt-10 text-sm font-semibold tracking-tight">{titre}</h2>
+			<ul class="mt-2 divide-y divide-neutral-200">
+				{#each entrees as entree (entree.entreeId)}
+					<li class="py-3">
+						<div class="flex items-baseline justify-between gap-4">
+							<span class="text-sm font-medium">{entree.oeuvre.titre}</span>
+							<span class="text-sm text-neutral-500">
+								{#if entree.note !== null}{etoiles(entree.note)}{/if}
+								{#if etagere === 'en_cours' && entree.position > 0}
+									· {pourcentage(entree.position)}
+								{/if}
+							</span>
+						</div>
+						{#if entree.avis}
+							<p class="mt-1 text-sm text-neutral-700">
+								{#if entree.avis.texte === null}
+									<span class="text-neutral-400">Un avis existe.</span>
+								{:else}
+									{entree.avis.texte}
+								{/if}
+							</p>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	{/each}
+
+	{#if abandonnees.length > 0}
+		<h2 class="mt-10 text-sm font-semibold tracking-tight">Abandonné</h2>
+		<ul class="mt-2 divide-y divide-neutral-200">
+			{#each abandonnees as entree (entree.entreeId)}
+				<li class="flex items-baseline justify-between gap-4 py-3">
+					<span class="text-sm font-medium">{entree.oeuvre.titre}</span>
+					{#if entree.note !== null}
+						<span class="text-sm text-neutral-500">{etoiles(entree.note)}</span>
+					{/if}
+				</li>
+			{/each}
+		</ul>
+	{/if}
+</main>

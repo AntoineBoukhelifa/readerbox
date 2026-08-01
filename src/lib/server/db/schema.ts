@@ -1,5 +1,6 @@
 import {
 	integer,
+	real,
 	sqliteTable,
 	text,
 	index,
@@ -8,6 +9,7 @@ import {
 } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { NOMS_DE_SOURCE, TYPES_OEUVRE } from '../catalog/sources/types';
+import { ETAGERES, SENS_DE_FRANCHISSEMENT } from '../journal/atteinte';
 
 const now = () => Date.now();
 const uuid = () => crypto.randomUUID();
@@ -378,3 +380,170 @@ export type WorkCreator = typeof workCreators.$inferSelect;
 export type WorkContent = typeof workContents.$inferSelect;
 export type WorkCorrection = typeof workCorrections.$inferSelect;
 export type GraphRematerialization = typeof graphRematerializations.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Journal (U4)
+// ---------------------------------------------------------------------------
+
+/**
+ * D'où vient une consignation (R42) : un membre qui l'a recommandée, un ordre
+ * qu'on suit, ou le catalogue — la recherche, le parcours par facette, le
+ * graphe.
+ *
+ * La provenance est conservée pour elle-même : R43 en dépend — le membre dont
+ * la recommandation a été suivie doit être informé quand l'œuvre est atteinte —
+ * et l'un des critères de réussite du produit est justement de savoir quelle
+ * part des consignations vient d'ailleurs que d'un autre membre.
+ */
+export const PROVENANCES = ['membre', 'ordre', 'catalogue'] as const;
+export type Provenance = (typeof PROVENANCES)[number];
+
+/**
+ * L'origine d'une consignation (R10) : posée directement par le membre, ou
+ * dérivée d'un recueil.
+ *
+ * U4 n'écrit jamais que « directe ». La cascade de U5 écrira « dérivée » et
+ * ajoutera la table des appuis qui dit *quels* recueils soutiennent l'entrée —
+ * il en faut plusieurs par entrée, R34 en dépend. Cette colonne-ci ne remplace
+ * pas cette table : elle permet aux surfaces de distinguer les deux cas sans
+ * jointure, et à U4 de refuser dès maintenant ce qui n'a pas de sens sur une
+ * entrée dérivée.
+ */
+export const ORIGINES_DE_CONSIGNATION = ['directe', 'derivee'] as const;
+export type OrigineDeConsignation = (typeof ORIGINES_DE_CONSIGNATION)[number];
+
+/**
+ * Une entrée de journal : un couple membre-œuvre, et l'unicité est portée par
+ * l'index — consigner deux fois la même œuvre déplace l'étagère, ça ne crée pas
+ * une seconde entrée.
+ *
+ * **L'état atteint n'est pas ici, et c'est le point.** Il se dérive de `shelf`
+ * et de `abandonedAt` par `journal/atteinte.ts`, en un seul endroit. Une colonne
+ * `reached` stockée à côté pourrait diverger de l'étagère, et le jour où elle
+ * divergerait le masquage laisserait fuir un texte.
+ *
+ * `abandonedAt` porte l'abandon de R2 — quatrième état distinct des trois
+ * étagères — sous forme d'horodatage plutôt que de booléen : c'est la même
+ * information plus la date, que le fil d'activité de U8 voudra.
+ *
+ * `declaredPosition` est la position **normalisée** de R23, en fraction de
+ * l'œuvre. `totalLength` est la longueur de l'édition que ce membre lit,
+ * déclarée par lui : elle est sur l'entrée et non sur l'œuvre parce que deux
+ * membres lisent deux éditions différentes du même roman.
+ *
+ * `rating` est la note de R4, en demi-étoiles de 0,5 à 5. Elle est portée par
+ * l'entrée et non par une table à part parce qu'elle vaut par couple
+ * membre-œuvre exactement comme l'entrée, et que R33 veut qu'elle disparaisse
+ * avec elle — ce qui devient structurel plutôt que dépendant d'un appelant.
+ */
+export const journalEntries = sqliteTable(
+	'journal_entries',
+	{
+		id: text('id').primaryKey().$defaultFn(uuid),
+		memberId: text('member_id')
+			.notNull()
+			.references(() => members.id),
+		workId: text('work_id')
+			.notNull()
+			.references(() => works.id),
+		shelf: text('shelf', { enum: ETAGERES }).notNull(),
+		abandonedAt: integer('abandoned_at'),
+		/** Fraction dans [0, 1], jamais un numéro de page. */
+		declaredPosition: real('declared_position'),
+		totalLength: integer('total_length'),
+		/** De 0,5 à 5 par demi-étoiles (R4). */
+		rating: real('rating'),
+		provenance: text('provenance', { enum: PROVENANCES }).notNull(),
+		provenanceMemberId: text('provenance_member_id').references(() => members.id),
+		/**
+		 * Sans clé étrangère : la table des ordres appartient à U7 et n'existe pas
+		 * encore. La colonne est posée maintenant parce que la provenance se
+		 * constate au moment de la consignation ou jamais.
+		 */
+		provenanceOrderId: text('provenance_order_id'),
+		origin: text('origin', { enum: ORIGINES_DE_CONSIGNATION }).notNull().default('directe'),
+		createdAt: integer('created_at').notNull().$defaultFn(now),
+		updatedAt: integer('updated_at').notNull().$defaultFn(now)
+	},
+	(table) => [
+		uniqueIndex('journal_entries_member_work_idx').on(table.memberId, table.workId),
+		index('journal_entries_work_idx').on(table.workId),
+		index('journal_entries_member_shelf_idx').on(table.memberId, table.shelf)
+	]
+);
+
+/**
+ * Un avis en texte libre (R5), au plus un par entrée de journal.
+ *
+ * Table séparée de l'entrée, contrairement à la note, pour deux raisons :
+ *
+ * 1. **R30** — un avis fige la position de son auteur au moment de sa rédaction
+ *    initiale, et une modification ultérieure ne la change pas. C'est une donnée
+ *    de l'avis, pas de l'entrée, et elle doit survivre au fait que le membre
+ *    avance ensuite dans l'œuvre.
+ * 2. **U6** attachera les révélations de R31 à des textes identifiables. Un
+ *    champ sur l'entrée n'a pas d'identité propre.
+ *
+ * La clé étrangère vers l'entrée est **sans cascade**, délibérément : R33 veut
+ * que le retrait emporte l'avis, et le faire explicitement dans `retirer` rend
+ * la règle visible et testable. La contrainte, elle, garantit qu'un oubli
+ * échouerait bruyamment au lieu de laisser un avis orphelin.
+ */
+export const reviews = sqliteTable(
+	'reviews',
+	{
+		id: text('id').primaryKey().$defaultFn(uuid),
+		entryId: text('entry_id')
+			.notNull()
+			.references(() => journalEntries.id),
+		body: text('body').notNull(),
+		/** La position de l'auteur à la rédaction initiale (R30). Figée. */
+		positionAtWriting: real('position_at_writing'),
+		createdAt: integer('created_at').notNull().$defaultFn(now),
+		updatedAt: integer('updated_at').notNull().$defaultFn(now)
+	},
+	(table) => [uniqueIndex('reviews_entry_idx').on(table.entryId)]
+);
+
+/**
+ * Le point d'appel unique de U4 : les franchissements de la frontière
+ * « atteint », dans un sens ou dans l'autre.
+ *
+ * Trois mécaniques se croisent sur cet événement (« Impact transverse » du
+ * plan). Deux d'entre elles n'ont rien à recevoir : le masquage de U6 et la
+ * progression des ordres de U7 se **dérivent à la lecture** de l'état atteint,
+ * donc elles suivent d'elles-mêmes. La troisième, les appuis du graphe de U9,
+ * est matérialisée à l'écriture (KTD4) et c'est elle que cette file sert.
+ *
+ * Table distincte de `graphRematerializations` malgré la forme identique, parce
+ * que le **grain** diffère et que le confondre coûterait cher : là-bas une
+ * œuvre, dont les rattachements ont changé, à rejouer pour tous les membres qui
+ * l'ont atteinte ; ici un couple membre-œuvre, dont l'état de lecture a changé,
+ * à rejouer pour ce membre seul. Les fusionner ferait recalculer vingt graphes
+ * à chaque consignation — sur le geste le plus fréquent du produit.
+ */
+export const reachCrossings = sqliteTable(
+	'reach_crossings',
+	{
+		id: text('id').primaryKey().$defaultFn(uuid),
+		memberId: text('member_id')
+			.notNull()
+			.references(() => members.id),
+		workId: text('work_id')
+			.notNull()
+			.references(() => works.id),
+		direction: text('direction', { enum: SENS_DE_FRANCHISSEMENT }).notNull(),
+		createdAt: integer('created_at').notNull().$defaultFn(now),
+		processedAt: integer('processed_at')
+	},
+	(table) => [
+		index('reach_crossings_pending_idx').on(table.processedAt, table.createdAt),
+		uniqueIndex('reach_crossings_pending_unique_idx')
+			.on(table.memberId, table.workId)
+			.where(sql`processed_at is null`)
+	]
+);
+
+export type JournalEntry = typeof journalEntries.$inferSelect;
+export type Review = typeof reviews.$inferSelect;
+export type ReachCrossing = typeof reachCrossings.$inferSelect;
