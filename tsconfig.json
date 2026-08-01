@@ -3,7 +3,19 @@
 	"compilerOptions": {
 		"rewriteRelativeImportExtensions": true,
 		"allowJs": true,
-		"checkJs": true,
+		// Volontairement désactivé, alors que l'échafaudage l'activait.
+		//
+		// Aucune source du projet n'est en JavaScript : tout ce que `checkJs`
+		// attrapait, c'était le `_worker.js` que l'adaptateur Cloudflare génère —
+		// un fichier concaténé et minifié qui produisait un millier et demi
+		// d'erreurs sur du code que personne n'écrit ni ne corrige.
+		//
+		// La conséquence pratique était pire que le bruit : `npm run check`
+		// échouait après chaque `npm run build`, donc la boucle de vérification ne
+		// tenait qu'à condition de ne jamais construire. Ni `exclude` dans ce
+		// fichier ni `--ignore` sur svelte-check ne l'écartaient — le premier n'est
+		// pas honoré ici, le second n'a d'effet qu'avec `--no-tsconfig`.
+		"checkJs": false,
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
 		"resolveJsonModule": true,

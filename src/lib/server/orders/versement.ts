@@ -1,8 +1,9 @@
-import { and, asc, count, eq, inArray, like, ne, sql } from 'drizzle-orm';
-import { entities, journalEntries, orderEntries, workCorrections, works } from '../db/schema';
+import { and, asc, count, eq, inArray, ne } from 'drizzle-orm';
+import { entities, orderEntries, works } from '../db/schema';
 import type { Db } from '../db';
-import type { TypeOeuvre } from '../catalog/sources/types';
-import { titresCorriges } from '../catalog/corrections';
+import type { AdaptateurDeSource, ReferenceSource, TypeOeuvre } from '../catalog/sources/types';
+import type { CacheDeRecherche } from '../catalog/cache';
+import { chercherDansLeCatalogue, type Degradation } from '../catalog/recherche';
 
 /**
  * Ce que l'éditeur d'ordre propose de verser.
@@ -12,25 +13,30 @@ import { titresCorriges } from '../catalog/corrections';
  * jusqu'à trois cents entrées. Deux surfaces les portent : une recherche
  * incrémentale et un versement en masse par série.
  *
- * **Ce module interroge le catalogue local, et le dit.** KTD1 veut qu'une
- * recherche interroge systématiquement les sources amont et fusionne avec le
- * local — mais les adaptateurs de source sont U3b, bloquée sur des clés d'API que
- * nous n'avons pas. Le versement porte donc, pour l'instant, sur les œuvres que
- * le catalogue connaît déjà. Ce qui compte pour U7 est ailleurs et tient dès
- * maintenant : **une œuvre du catalogue n'a pas à être consignée par qui que ce
- * soit pour entrer dans un ordre.** Le jour où U3b existera, cette fonction se
- * bornera à fusionner ses résultats avec ceux de l'amont ; rien de ce que U7
- * garantit ne bougera.
+ * **La recherche passe par le catalogue complet, sources amont comprises**
+ * (KTD1). C'est ce que le plan attend de U7 : « on doit pouvoir bâtir un ordre
+ * sur des numéros que personne n'a encore consignés ». Une œuvre amont n'a pas
+ * encore d'identifiant local — elle porte une référence de source — et
+ * l'obtiendra au versement, par l'ingestion paresseuse.
+ *
+ * Le versement en masse par série, lui, reste local : il verse ce que le
+ * catalogue porte déjà. Verser une série amont entière voudrait dire ingérer
+ * quarante fiches à la cadence de Metron dans une seule requête, ce qui est
+ * exactement le fractionnement que U5 prévoit et qui n'a rien à faire ici.
  */
 
 /** Un résultat de recherche, tel que l'éditeur l'affiche. */
 export interface OeuvreVersable {
-	id: string;
+	/** L'œuvre du catalogue. `null` tant qu'elle n'y est pas entrée. */
+	id: string | null;
+	/** La référence amont, pour l'ingérer au moment du versement. */
+	reference: ReferenceSource | null;
 	titre: string;
 	type: TypeOeuvre;
 	dateDeParution: string | null;
 	serie: string | null;
 	numeroDansLaSerie: number | null;
+	couvertureUrl: string | null;
 	/** L'œuvre est-elle déjà dans l'ordre en cours d'édition ? */
 	dejaPresente: boolean;
 	/**
@@ -53,93 +59,82 @@ export interface SerieVersable {
 
 const RESULTATS_MAX = 25;
 
+export interface OptionsDeVersement {
+	requete: string;
+	ordreId?: string;
+	limite?: number;
+	/** Les sources à interroger. Sans elles, la recherche se réduit au catalogue local. */
+	adaptateurs?: AdaptateurDeSource[];
+	cache?: CacheDeRecherche;
+}
+
+export interface RechercheDeVersement {
+	resultats: OeuvreVersable[];
+	/** Les sources qui n'ont pas répondu. L'éditeur le dit au lieu d'échouer. */
+	degradations: Degradation[];
+}
+
 /**
  * Cherche des œuvres à verser dans un ordre.
  *
- * La recherche porte sur le titre **de source et corrigé** : un membre qui a
- * corrigé une fiche fausse (R47) doit retrouver l'œuvre sous le titre qu'il a
- * posé, pas sous celui qu'il a justement corrigé. Deux requêtes plutôt qu'une
- * jointure, parce qu'une correction est rare et que la jointure la ferait payer
- * à toutes les recherches.
- *
  * Une requête vide ne rend rien plutôt que tout le catalogue : rendre les vingt
  * premières œuvres par ordre d'insertion n'orienterait personne et coûterait une
- * lecture à chaque frappe effacée.
+ * lecture — et un appel amont — à chaque frappe effacée.
  */
-export async function chercherOeuvresAVerser(
+export async function chercherAVerser(
 	db: Db,
-	options: { requete: string; ordreId?: string; limite?: number }
-): Promise<OeuvreVersable[]> {
+	options: OptionsDeVersement
+): Promise<RechercheDeVersement> {
 	const requete = options.requete.trim();
-	if (requete === '') return [];
+	if (requete === '') return { resultats: [], degradations: [] };
 
 	const limite = options.limite ?? RESULTATS_MAX;
-	const motif = `%${echapperLike(requete)}%`;
-
-	const [directes, parCorrection] = await Promise.all([
-		db
-			.select({ id: works.id })
-			.from(works)
-			.where(like(works.title, sql`${motif} escape '\\'`))
-			.limit(limite),
-		db
-			.select({ id: workCorrections.workId })
-			.from(workCorrections)
-			.where(
-				and(
-					eq(workCorrections.field, 'titre'),
-					like(workCorrections.value, sql`${motif} escape '\\'`)
-				)
-			)
-			.limit(limite)
-	]);
-
-	const ids = [...new Set([...directes, ...parCorrection].map((ligne) => ligne.id))].slice(
-		0,
+	const trouvees = await chercherDansLeCatalogue(db, {
+		requete,
+		adaptateurs: options.adaptateurs ?? [],
+		...(options.cache !== undefined ? { cache: options.cache } : {}),
 		limite
-	);
-	if (ids.length === 0) return [];
+	});
 
-	const [lignes, titres, dejaLa, consignees] = await Promise.all([
-		db
-			.select({
-				id: works.id,
-				type: works.type,
-				date: works.releaseDate,
-				numero: works.numberInSeries,
-				serie: entities.name
-			})
-			.from(works)
-			.leftJoin(entities, eq(entities.id, works.seriesEntityId))
-			.where(inArray(works.id, ids)),
-		titresCorriges(db, ids),
-		options.ordreId === undefined
-			? Promise.resolve([])
-			: db
+	const locales = trouvees.resultats
+		.map((resultat) => resultat.oeuvreId)
+		.filter((id): id is string => id !== null);
+
+	const dejaLa =
+		options.ordreId === undefined || locales.length === 0
+			? []
+			: await db
 					.select({ oeuvre: orderEntries.workId })
 					.from(orderEntries)
-					.where(and(eq(orderEntries.orderId, options.ordreId), inArray(orderEntries.workId, ids))),
-		db
-			.selectDistinct({ oeuvre: journalEntries.workId })
-			.from(journalEntries)
-			.where(inArray(journalEntries.workId, ids))
-	]);
+					.where(
+						and(eq(orderEntries.orderId, options.ordreId), inArray(orderEntries.workId, locales))
+					);
 
 	const presentes = new Set(dejaLa.map((ligne) => ligne.oeuvre));
-	const connues = new Set(consignees.map((ligne) => ligne.oeuvre));
 
-	return lignes
-		.map((ligne) => ({
-			id: ligne.id,
-			titre: titres.get(ligne.id) ?? '',
-			type: ligne.type,
-			dateDeParution: ligne.date,
-			serie: ligne.serie,
-			numeroDansLaSerie: ligne.numero,
-			dejaPresente: presentes.has(ligne.id),
-			connueDuGroupe: connues.has(ligne.id)
-		}))
-		.sort((a, b) => a.titre.localeCompare(b.titre));
+	return {
+		resultats: trouvees.resultats.map((resultat) => ({
+			id: resultat.oeuvreId,
+			reference: resultat.reference,
+			titre: resultat.titre,
+			type: resultat.type,
+			dateDeParution: resultat.dateDeParution,
+			serie: resultat.serie,
+			numeroDansLaSerie: resultat.numeroDansLaSerie,
+			couvertureUrl: resultat.couvertureUrl,
+			dejaPresente: resultat.oeuvreId !== null && presentes.has(resultat.oeuvreId),
+			connueDuGroupe: resultat.consignee
+		})),
+		degradations: trouvees.degradations
+	};
+}
+
+/** La forme courte, quand seule la liste importe. */
+export async function chercherOeuvresAVerser(
+	db: Db,
+	options: OptionsDeVersement
+): Promise<OeuvreVersable[]> {
+	return (await chercherAVerser(db, options)).resultats;
 }
 
 /**
@@ -164,15 +159,4 @@ export async function seriesVersables(db: Db, limite = 100): Promise<SerieVersab
 		nom: ligne.nom,
 		nombreDOeuvres: ligne.n
 	}));
-}
-
-/**
- * Échappe les caractères que `LIKE` interprète.
- *
- * Sans ça, une recherche contenant `%` rendrait tout le catalogue et un `_`
- * rendrait n'importe quoi — ce n'est pas une faille, les titres viennent du
- * catalogue et pas d'un texte exécuté, mais c'est un résultat faux.
- */
-function echapperLike(valeur: string): string {
-	return valeur.replace(/[\\%_]/g, (caractere) => `\\${caractere}`);
 }

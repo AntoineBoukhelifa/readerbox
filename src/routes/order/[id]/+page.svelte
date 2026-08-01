@@ -209,6 +209,7 @@
 			entrees={data.entrees}
 			requete={data.requete}
 			resultats={data.resultats}
+			degradations={data.degradations}
 			series={data.series}
 		/>
 

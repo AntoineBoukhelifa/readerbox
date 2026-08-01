@@ -57,13 +57,76 @@
 <main class="mx-auto max-w-2xl px-6 py-16">
 	<a href={resolve('/')} class="text-sm text-neutral-500 underline underline-offset-4">Retour</a>
 
-	<h1 class="mt-6 text-2xl font-semibold tracking-tight">{data.oeuvre.titre}</h1>
-	<p class="mt-1 text-sm text-neutral-500">
-		{data.oeuvre.type}
-		{#if data.oeuvre.serie}· {data.oeuvre.serie}{/if}
-		{#if data.oeuvre.numeroDansLaSerie !== null}· n° {data.oeuvre.numeroDansLaSerie}{/if}
-		{#if data.oeuvre.dateDeParution}· {data.oeuvre.dateDeParution}{/if}
-	</p>
+	<div class="mt-6 flex gap-6">
+		{#if data.oeuvre.couvertureUrl}
+			<img
+				src={data.oeuvre.couvertureUrl}
+				alt=""
+				class="h-40 w-28 shrink-0 rounded-sm border border-neutral-200 object-cover"
+			/>
+		{/if}
+
+		<div class="min-w-0">
+			<!-- Le titre vient d’une source tierce : interpolé, donc littéral. -->
+			<h1 class="text-2xl font-semibold tracking-tight">{data.oeuvre.titre}</h1>
+			<p class="mt-1 text-sm text-neutral-500">
+				{data.oeuvre.type}
+				{#if data.oeuvre.serie}
+					·
+					{#if data.oeuvre.serieFacette}
+						<a
+							href={resolve('/parcours/[axe]/[source]/[id]', {
+								axe: 'serie',
+								source: data.oeuvre.serieFacette.source,
+								id: data.oeuvre.serieFacette.idExterne
+							})}
+							class="underline underline-offset-4">{data.oeuvre.serie}</a
+						>
+					{:else}{data.oeuvre.serie}{/if}
+				{/if}
+				{#if data.oeuvre.numeroDansLaSerie !== null}· n° {data.oeuvre.numeroDansLaSerie}{/if}
+				{#if data.oeuvre.dateDeParution}· {data.oeuvre.dateDeParution}{/if}
+			</p>
+
+			{#if data.oeuvre.event}
+				<p class="mt-1 text-sm text-neutral-500">
+					{#if data.oeuvre.eventFacette}
+						<a
+							href={resolve('/parcours/[axe]/[source]/[id]', {
+								axe: 'event',
+								source: data.oeuvre.eventFacette.source,
+								id: data.oeuvre.eventFacette.idExterne
+							})}
+							class="underline underline-offset-4">{data.oeuvre.event}</a
+						>
+					{:else}{data.oeuvre.event}{/if}
+				</p>
+			{/if}
+
+			<!-- Une fiche incomplète le dit : c’est ce que l’état d’ingestion existe pour porter. -->
+			{#if data.oeuvre.etatIngestion !== 'complete'}
+				<p class="mt-1 text-xs text-neutral-400">
+					La source n’a pas tout donné pour cette fiche. Elle se complétera d’elle-même.
+				</p>
+			{/if}
+		</div>
+	</div>
+
+	<!-- R46 — chaque personnage est une porte vers ses autres apparitions, consignées ou non. -->
+	{#if data.personnages.length > 0}
+		<p class="mt-4 text-sm text-neutral-700">
+			<span class="text-neutral-500">Personnages :</span>
+			{#each data.personnages as personnage, index (personnage.entityId)}{#if index > 0},
+				{/if}{#if personnage.facette}<a
+						href={resolve('/parcours/[axe]/[source]/[id]', {
+							axe: 'personnage',
+							source: personnage.facette.source,
+							id: personnage.facette.idExterne
+						})}
+						class="underline underline-offset-4">{personnage.nom}</a
+					>{:else}{personnage.nom}{/if}{/each}
+		</p>
+	{/if}
 
 	<!-- R28 — l’agrégat ne passe jamais par le masquage. -->
 	<p class="mt-4 text-sm">

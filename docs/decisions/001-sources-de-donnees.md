@@ -46,6 +46,14 @@ La dimension personnage du graphe est **conservée** : le seuil de 70 % fixé av
 
 Metron modélise les recueils comme des **séries de type « trade paperback »** plutôt que comme un type d'œuvre distinct. Trois requêtes de contrôle trouvent bien les séries correspondantes, mais **la liste des numéros contenus reste à confirmer sur une fiche précise** — c'est la donnée dont dépend toute la cascade de U5, et elle n'est pas encore vérifiée.
 
+**Complété en U3b, et la nouvelle mesure est moins bonne que la précédente.** `/api/series_type/` rend bien neuf types dont « Trade Paperback », « Hardcover », « Omnibus » et « Graphic Novel », et la fiche détaillée d'un numéro porte le sien dans `series.series_type.name`. Mais **aucune série de ces types n'a pu être trouvée** : `/api/series/?series_type=N` rend un décompte nul pour les neuf valeurs, « Single Issue » compris — le paramètre n'est donc pas le filtre attendu, et il n'y a pas d'autre chemin évident pour énumérer les recueils. La fiche porte aussi un champ `reprints`, vide sur tous les numéros observés.
+
+Conséquence pour U3b : l'adaptateur Metron **mappe** `reprints` vers le contenu d'un recueil, mais déclare `contenuDesRecueils: false` dans ses capacités. Le code est écrit, il n'est pas vérifié, et U5 ne doit pas se bâtir dessus avant de l'avoir été.
+
+### Répartition des résultats entre sources (constat de U3b)
+
+`series_name=Iron Man` rend **cent numéros** chez Metron, quand TMDB en rend deux ou trois pertinents. Une recherche qui concatène les sources puis coupe au plafond d'affichage fait donc **disparaître tous les films**, silencieusement — la page a l'air de fonctionner. Le plafond est réparti entre les sources, part garantie à chacune, et le reliquat revient aux plus longues. Le défaut n'a été vu qu'en interrogeant les vraies API : aucun test à source unique ne l'atteint.
+
 ## Ce qui reste ouvert, et qui peut tout changer
 
 **Les licences n'ont pas été lues.** C'était la première des cinq questions de U1 et elle n'est pas tranchée. Trois points à vérifier avant que U3b ne persiste quoi que ce soit durablement :

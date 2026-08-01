@@ -22,6 +22,8 @@
 				Les ordres
 			</a>
 
+			<a href={resolve('/search')} class="text-sm underline underline-offset-4">Chercher</a>
+
 			<a href={resolve('/graph')} class="text-sm underline underline-offset-4">Ton graphe</a>
 
 			<a href={resolve('/feed')} class="text-sm underline underline-offset-4">Le fil</a>

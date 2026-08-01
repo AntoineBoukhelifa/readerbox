@@ -1,0 +1,55 @@
+{
+	"count": 195,
+	"next": "https://metron.cloud/api/issue/?character_id=1391&page=2",
+	"previous": null,
+	"results": [
+		{
+			"id": 40880,
+			"series": {
+				"id": 2912,
+				"name": "Age of Ultron",
+				"volume": 1,
+				"year_began": 2013
+			},
+			"number": "10",
+			"issue": "Age of Ultron (2013) #10",
+			"cover_date": "2013-08-01",
+			"store_date": "2013-06-19",
+			"image": "https://static.metron.cloud/media/issue/2021/11/17/age-of-ultron-10.jpg",
+			"cover_hash": "efda8718e40d429b",
+			"modified": "2024-12-27T17:48:32.568613-05:00"
+		},
+		{
+			"id": 29824,
+			"series": {
+				"id": 2136,
+				"name": "Astonishing X-Men",
+				"volume": 3,
+				"year_began": 2004
+			},
+			"number": "3",
+			"issue": "Astonishing X-Men (2004) #3",
+			"cover_date": "2004-09-01",
+			"store_date": "2004-07-28",
+			"image": "https://static.metron.cloud/media/issue/2021/04/26/astonishing-x-men-v3-3.jpg",
+			"cover_hash": "ae1fc960344f8795",
+			"modified": "2024-12-28T13:42:15.104566-05:00"
+		},
+		{
+			"id": 29826,
+			"series": {
+				"id": 2136,
+				"name": "Astonishing X-Men",
+				"volume": 3,
+				"year_began": 2004
+			},
+			"number": "5",
+			"issue": "Astonishing X-Men (2004) #5",
+			"cover_date": "2004-11-01",
+			"store_date": "2004-09-22",
+			"image": "https://static.metron.cloud/media/issue/2021/04/26/astonishing-x-men-v3-5.jpg",
+			"cover_hash": "d4502af324127fee",
+			"modified": "2024-12-28T13:42:21.149550-05:00"
+		}
+	]
+}

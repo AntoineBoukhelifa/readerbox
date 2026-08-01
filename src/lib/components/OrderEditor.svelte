@@ -37,13 +37,20 @@
 		oeuvre: { id: string; titre: string; type: string } | null;
 	}
 
+	/**
+	 * Un résultat de versement. `id` est nul tant que l'œuvre n'est pas entrée au
+	 * catalogue : elle vient d'une source amont, et c'est le versement qui
+	 * l'ingérera (KTD1). La clé d'itération tombe alors sur la référence.
+	 */
 	interface ResultatAffiche {
-		id: string;
+		id: string | null;
+		reference: { source: string; idExterne: string } | null;
 		titre: string;
 		type: string;
 		serie: string | null;
 		numeroDansLaSerie: number | null;
 		dateDeParution: string | null;
+		couvertureUrl: string | null;
 		dejaPresente: boolean;
 		connueDuGroupe: boolean;
 	}
@@ -52,10 +59,14 @@
 		entrees: EntreeAffichee[];
 		requete: string;
 		resultats: ResultatAffiche[];
+		degradations?: { source: string; message: string }[];
 		series: { entityId: string; nom: string; nombreDOeuvres: number }[];
 	}
 
-	let { entrees, requete, resultats, series }: Props = $props();
+	let { entrees, requete, resultats, degradations = [], series }: Props = $props();
+
+	const cle = (resultat: ResultatAffiche) =>
+		resultat.id ?? `${resultat.reference?.source}:${resultat.reference?.idExterne}`;
 
 	// -----------------------------------------------------------------------
 	// Recherche incrémentale
@@ -144,14 +155,21 @@
 	</button>
 </form>
 
+<!-- Une source qui ne répond pas ne fait pas échouer l’éditeur : elle le dit. -->
+{#each degradations as degradation (degradation.source)}
+	<p class="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">
+		{degradation.message}
+	</p>
+{/each}
+
 {#if requete !== ''}
 	{#if resultats.length === 0}
 		<p class="mt-2 text-sm text-neutral-500">
-			Rien dans le catalogue pour « {requete} ».
+			Rien sous « {requete} », ni ici ni chez les sources.
 		</p>
 	{:else}
 		<ul class="mt-2 divide-y divide-neutral-200">
-			{#each resultats as resultat (resultat.id)}
+			{#each resultats as resultat (cle(resultat))}
 				<li class="flex items-baseline justify-between gap-4 py-2">
 					<div class="text-sm">
 						<span class="font-medium">{resultat.titre}</span>
@@ -167,7 +185,9 @@
 						<span class="text-sm whitespace-nowrap text-neutral-400">Déjà dedans</span>
 					{:else}
 						<form method="POST" action="?/ajouter" class="flex items-center gap-2">
-							<input type="hidden" name="oeuvre" value={resultat.id} />
+							<input type="hidden" name="oeuvre" value={resultat.id ?? ''} />
+							<input type="hidden" name="source" value={resultat.reference?.source ?? ''} />
+							<input type="hidden" name="idExterne" value={resultat.reference?.idExterne ?? ''} />
 							<button class="text-sm font-medium underline underline-offset-4">Ajouter</button>
 						</form>
 					{/if}

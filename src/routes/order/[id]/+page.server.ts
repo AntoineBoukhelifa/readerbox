@@ -18,7 +18,11 @@ import {
 	type ResultatSimple
 } from '$lib/server/orders/orders';
 import { pourcentageAffiche } from '$lib/server/orders/progression';
-import { chercherOeuvresAVerser, seriesVersables } from '$lib/server/orders/versement';
+import { chercherAVerser, seriesVersables } from '$lib/server/orders/versement';
+import { adaptateursDe } from '$lib/server/catalog/sources';
+import { cacheDeRecherche } from '$lib/server/catalog/cache';
+import { oeuvreLocaleDe } from '$lib/server/catalog/amont';
+import { NOMS_DE_SOURCE, type NomDeSource } from '$lib/server/catalog/sources/types';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
@@ -46,12 +50,22 @@ export const load: PageServerLoad = async ({ params, url, locals, platform }) =>
 	const requete = url.searchParams.get('q') ?? '';
 
 	// La recherche et la liste des séries ne servent qu'à l'éditeur : les charger
-	// pour un suiveur serait deux requêtes payées pour rien à chaque visite.
-	const [suiveurs, resultats, series] = await Promise.all([
+	// pour un suiveur serait deux requêtes — et un appel amont — payés pour rien à
+	// chaque visite.
+	//
+	// KTD1 : la recherche de versement interroge les sources comme toutes les
+	// autres. C'est ce qui permet de bâtir un ordre sur des numéros que personne
+	// n'a encore consignés, ce que le plan attend explicitement de U7.
+	const [suiveurs, versement, series] = await Promise.all([
 		suiveursDOrdre(db, ordre.id),
 		ordre.modifiable && requete !== ''
-			? chercherOeuvresAVerser(db, { requete, ordreId: ordre.id })
-			: Promise.resolve([]),
+			? chercherAVerser(db, {
+					requete,
+					ordreId: ordre.id,
+					adaptateurs: adaptateursDe(platform?.env ?? {}),
+					cache: cacheDeRecherche
+				})
+			: Promise.resolve({ resultats: [], degradations: [] }),
 		ordre.modifiable ? seriesVersables(db) : Promise.resolve([])
 	]);
 
@@ -101,7 +115,14 @@ export const load: PageServerLoad = async ({ params, url, locals, platform }) =>
 			nombreAtteintes: suiveur.progression.atteintes.length
 		})),
 		requete,
-		resultats,
+		resultats: versement.resultats,
+		degradations: versement.degradations.map((degradation) => ({
+			source: degradation.source,
+			message:
+				degradation.motif === 'quota'
+					? `${degradation.source} a reçu trop de demandes d’un coup : ses résultats reviendront dans un instant.`
+					: `${degradation.source} n’a pas répondu (${degradation.motif}).`
+		})),
 		series
 	};
 };
@@ -158,6 +179,10 @@ async function contexte(evenement: {
 
 const REFUS_SANS_SESSION = { message: 'Session requise.' };
 
+function estSource(valeur: string): valeur is NomDeSource {
+	return (NOMS_DE_SOURCE as readonly string[]).includes(valeur);
+}
+
 export const actions: Actions = {
 	modifier: async (evenement) => {
 		const ctx = await contexte(evenement);
@@ -185,14 +210,45 @@ export const actions: Actions = {
 		redirect(303, '/orders');
 	},
 
+	/**
+	 * Verser une œuvre — locale, ou amont et pas encore au catalogue.
+	 *
+	 * Dans le second cas l'ingestion précède l'ajout : une entrée d'ordre référence
+	 * une œuvre locale, et il n'y en a pas tant que personne n'a agi. C'est le
+	 * troisième déclencheur d'écriture de KTD1, à côté de la consignation et de
+	 * l'atteinte.
+	 */
 	ajouter: async (evenement) => {
 		const ctx = await contexte(evenement);
 		if (!ctx) return fail(401, REFUS_SANS_SESSION);
 
+		let oeuvreId = String(ctx.champs.get('oeuvre') ?? '');
+		if (oeuvreId === '') {
+			const source = String(ctx.champs.get('source') ?? '');
+			const idExterne = String(ctx.champs.get('idExterne') ?? '');
+			if (!estSource(source) || idExterne === '') {
+				return fail(400, { message: 'Résultat de recherche incomplet.' });
+			}
+
+			const ingeree = await oeuvreLocaleDe(ctx.db, {
+				reference: { source, idExterne },
+				adaptateurs: adaptateursDe(evenement.platform?.env ?? {})
+			});
+			if (!ingeree.ok) {
+				return fail(ingeree.motif === 'quota' ? 429 : 502, {
+					message:
+						ingeree.motif === 'quota'
+							? 'La source a reçu trop de demandes d’un coup. Réessaie dans un instant.'
+							: `La source n’a pas pu être lue (${ingeree.motif}).`
+				});
+			}
+			oeuvreId = ingeree.oeuvreId;
+		}
+
 		const resultat = await ajouterEntree(ctx.db, {
 			membreId: ctx.membreId,
 			ordreId: ctx.ordreId,
-			oeuvreId: String(ctx.champs.get('oeuvre') ?? ''),
+			oeuvreId,
 			facultative: ctx.champs.get('facultative') === '1'
 		});
 		return resultat.ok ? { fait: true } : rendre(resultat);

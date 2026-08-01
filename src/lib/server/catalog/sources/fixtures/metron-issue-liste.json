@@ -1,0 +1,55 @@
+{
+	"count": 3,
+	"next": null,
+	"previous": null,
+	"results": [
+		{
+			"id": 44467,
+			"series": {
+				"id": 3231,
+				"name": "Immortal X-Men",
+				"volume": 1,
+				"year_began": 2022
+			},
+			"number": "1",
+			"issue": "Immortal X-Men (2022) #1",
+			"cover_date": "2022-05-01",
+			"store_date": "2022-03-30",
+			"image": "https://static.metron.cloud/media/issue/2022/03/18/immortal-xmen-1.jpg",
+			"cover_hash": "e0a9facc0fc79b40",
+			"modified": "2024-12-30T08:54:11.676226-05:00"
+		},
+		{
+			"id": 45309,
+			"series": {
+				"id": 3231,
+				"name": "Immortal X-Men",
+				"volume": 1,
+				"year_began": 2022
+			},
+			"number": "2",
+			"issue": "Immortal X-Men (2022) #2",
+			"cover_date": "2022-07-01",
+			"store_date": "2022-05-18",
+			"image": "https://static.metron.cloud/media/issue/2022/05/02/immortal-xmen-2.jpg",
+			"cover_hash": "b8a4e11cc7f68d43",
+			"modified": "2024-12-30T08:54:13.817909-05:00"
+		},
+		{
+			"id": 48774,
+			"series": {
+				"id": 3231,
+				"name": "Immortal X-Men",
+				"volume": 1,
+				"year_began": 2022
+			},
+			"number": "3",
+			"issue": "Immortal X-Men (2022) #3",
+			"cover_date": "2022-08-01",
+			"store_date": "2022-06-22",
+			"image": "https://static.metron.cloud/media/issue/2022/06/05/immortal-xmen-3.jpg",
+			"cover_hash": "f3c2c1af860add15",
+			"modified": "2024-12-30T08:54:16.060931-05:00"
+		}
+	]
+}

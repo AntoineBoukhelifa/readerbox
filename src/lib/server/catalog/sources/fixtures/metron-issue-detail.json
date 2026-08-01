@@ -1,0 +1,136 @@
+{
+	"id": 44467,
+	"publisher": {
+		"id": 1,
+		"name": "Marvel"
+	},
+	"imprint": null,
+	"series": {
+		"id": 3231,
+		"name": "Immortal X-Men",
+		"alt_names": [],
+		"sort_name": "Immortal X-Men",
+		"volume": 1,
+		"year_began": 2022,
+		"series_type": {
+			"id": 13,
+			"name": "Single Issue"
+		},
+		"genres": [
+			{
+				"id": 10,
+				"name": "Super-Hero"
+			}
+		]
+	},
+	"number": "1",
+	"alt_number": "",
+	"title": "",
+	"name": ["Part One: The Last Hand"],
+	"cover_date": "2022-05-01",
+	"store_date": "2022-03-30",
+	"foc_date": null,
+	"price": "5.99",
+	"price_currency": "USD",
+	"rating": {
+		"id": 3,
+		"name": "Teen"
+	},
+	"sku": "JAN220809",
+	"isbn": "",
+	"upc": "75960620004700111",
+	"page": 48,
+	"desc": "IN THE QUIET COUNCIL, NO ONE CAN HEAR YOU SCREAM! The Quiet Council rules the Krakoan age, for better... or worse. Now, ",
+	"image": "https://static.metron.cloud/media/issue/2022/03/18/immortal-xmen-1.jpg",
+	"cover_hash": "e0a9facc0fc79b40",
+	"average_rating": null,
+	"rating_count": 0,
+	"arcs": [
+		{
+			"id": 1423,
+			"name": "Destiny of X",
+			"modified": "2023-12-27T11:35:57.319554-05:00"
+		}
+	],
+	"credits": [
+		{
+			"id": 215,
+			"creator": "C. B. Cebulski",
+			"role": [
+				{
+					"id": 20,
+					"name": "Editor In Chief"
+				}
+			]
+		},
+		{
+			"id": 5,
+			"creator": "Clayton Cowles",
+			"role": [
+				{
+					"id": 6,
+					"name": "Letterer"
+				},
+				{
+					"id": 14,
+					"name": "Production"
+				}
+			]
+		},
+		{
+			"id": 250,
+			"creator": "David Curiel",
+			"role": [
+				{
+					"id": 5,
+					"name": "Colorist"
+				}
+			]
+		},
+		{
+			"id": 83,
+			"creator": "Emanuela Lupacchino",
+			"role": [
+				{
+					"id": 7,
+					"name": "Cover"
+				}
+			]
+		}
+	],
+	"characters": [
+		{
+			"id": 1391,
+			"name": "Abigail Brand",
+			"modified": "2025-02-18T19:54:01.041250-05:00"
+		},
+		{
+			"id": 358,
+			"name": "Beast",
+			"modified": "2026-07-28T09:34:24.429662-04:00"
+		},
+		{
+			"id": 745,
+			"name": "Colossus",
+			"modified": "2026-07-27T10:07:54.637416-04:00"
+		},
+		{
+			"id": 2952,
+			"name": "Cypher",
+			"modified": "2026-06-05T08:07:16.874184-04:00"
+		}
+	],
+	"teams": [
+		{
+			"id": 15,
+			"name": "X-Men",
+			"modified": "2026-07-28T09:36:44.082997-04:00"
+		}
+	],
+	"universes": [],
+	"reprints": [],
+	"cv_id": 913161,
+	"gcd_id": 2383374,
+	"resource_url": "https://metron.cloud/issue/immortal-x-men-2022-1/",
+	"modified": "2024-12-30T08:54:11.676226-05:00"
+}

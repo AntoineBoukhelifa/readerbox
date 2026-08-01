@@ -27,6 +27,7 @@ import {
 	reveler
 } from '$lib/server/masking/visibility';
 import { ordreProvenant } from '$lib/server/orders/orders';
+import { referencesDEntites } from '$lib/server/catalog/recherche';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
@@ -95,6 +96,22 @@ export const load: PageServerLoad = async ({ params, url, locals, platform }) =>
 	const monAvis = avis.find((contenu) => contenu.auteurId === membreId) ?? null;
 	const longue = estOeuvreLongue(oeuvre.type);
 
+	/**
+	 * R46 — les rattachements de la fiche sont des portes vers l'amont.
+	 *
+	 * Chaque personnage et la série portent leur référence de source pour que la
+	 * page de parcours puisse aller chercher les apparitions que le groupe n'a pas
+	 * consignées. Sans cette référence, la découverte se refermerait sur le
+	 * catalogue local — précisément ce que KTD1 interdit.
+	 */
+	const references = await referencesDEntites(db, [
+		...oeuvre.personnages.map((personnage) => personnage.entityId),
+		...(oeuvre.serie ? [oeuvre.serie.entityId] : []),
+		...(oeuvre.event ? [oeuvre.event.entityId] : [])
+	]);
+
+	const facette = (entityId: string) => references.get(entityId) ?? null;
+
 	return {
 		oeuvre: {
 			id: oeuvre.id,
@@ -103,8 +120,19 @@ export const load: PageServerLoad = async ({ params, url, locals, platform }) =>
 			longue,
 			dateDeParution: oeuvre.dateDeParution,
 			serie: oeuvre.serie?.nom ?? null,
-			numeroDansLaSerie: oeuvre.numeroDansLaSerie
+			serieFacette: oeuvre.serie ? facette(oeuvre.serie.entityId) : null,
+			event: oeuvre.event?.nom ?? null,
+			eventFacette: oeuvre.event ? facette(oeuvre.event.entityId) : null,
+			couvertureUrl: oeuvre.couvertureUrl,
+			numeroDansLaSerie: oeuvre.numeroDansLaSerie,
+			/** L'état d'ingestion est affiché : une fiche incomplète le dit plutôt que de mentir par omission. */
+			etatIngestion: oeuvre.etatIngestion
 		},
+		personnages: oeuvre.personnages.map((personnage) => ({
+			entityId: personnage.entityId,
+			nom: personnage.nom,
+			facette: facette(personnage.entityId)
+		})),
 		agregat,
 		// R38 — le nom d'un membre parti n'est pas remplacé au rendu : il n'est pas
 		// envoyé. C'est la même discipline que pour les textes masqués, et pour la

@@ -2,7 +2,11 @@ import { members } from '../db/schema';
 import type { Db } from '../db';
 import {
 	oeuvreVide,
+	type AdaptateurDeSource,
+	type AxeDeParcours,
+	type CapacitesDeSource,
 	type EntiteDistante,
+	type MotifEchec,
 	type NomDeSource,
 	type OeuvreDistante,
 	type ReferenceSource,
@@ -57,6 +61,68 @@ export function oeuvreDistante(
 			createurs: champs.createurs?.length ? 'fournis' : base.completude.createurs,
 			contenu: champs.contenu?.length ? 'fourni' : base.completude.contenu,
 			...champs.completude
+		}
+	};
+}
+
+const CAPACITES_COMPLETES: CapacitesDeSource = {
+	rechercheParTitre: true,
+	parcoursParPersonnage: true,
+	parcoursParSerie: true,
+	parcoursParCreateur: true,
+	parcoursParEvent: true,
+	contenuDesRecueils: true,
+	personnagesParOeuvre: true
+};
+
+export interface AdaptateurFactice extends AdaptateurDeSource {
+	/** Les appels réellement partis vers la « source » — ce qu'un cache doit faire tomber à zéro. */
+	appels: { quoi: 'rechercher' | 'parcourir' | 'lireOeuvre'; argument: string }[];
+}
+
+/**
+ * Un adaptateur de source contrôlé, pour éprouver la couche de recherche sans
+ * dépendre de la forme d'une API réelle.
+ *
+ * Les adaptateurs concrets sont testés séparément contre des fixtures capturées ;
+ * ici, ce qui compte est la **règle** — le local ne coupe jamais l'amont, une
+ * source qui échoue dégrade — et elle doit se lire sans un octet de JSON Metron.
+ */
+export function adaptateurFactice(options: {
+	nom?: NomDeSource;
+	resultats?: OeuvreDistante[];
+	parcours?: OeuvreDistante[];
+	fiches?: Record<string, OeuvreDistante | null>;
+	/** Quand il est posé, tout appel rend cet échec. */
+	echec?: MotifEchec;
+	capacites?: Partial<CapacitesDeSource>;
+	typesCouverts?: readonly TypeOeuvre[];
+}): AdaptateurFactice {
+	const appels: AdaptateurFactice['appels'] = [];
+	const echec = options.echec;
+
+	return {
+		nom: options.nom ?? 'metron',
+		capacites: { ...CAPACITES_COMPLETES, ...options.capacites },
+		typesCouverts: options.typesCouverts ?? ['numero'],
+		appels,
+
+		async rechercher(requete: string) {
+			appels.push({ quoi: 'rechercher', argument: requete });
+			if (echec) return { ok: false, motif: echec };
+			return { ok: true, valeur: { elements: options.resultats ?? [] } };
+		},
+
+		async parcourir(axe: AxeDeParcours, idExterne: string) {
+			appels.push({ quoi: 'parcourir', argument: `${axe}:${idExterne}` });
+			if (echec) return { ok: false, motif: echec };
+			return { ok: true, valeur: { elements: options.parcours ?? [] } };
+		},
+
+		async lireOeuvre(idExterne: string) {
+			appels.push({ quoi: 'lireOeuvre', argument: idExterne });
+			if (echec) return { ok: false, motif: echec };
+			return { ok: true, valeur: options.fiches?.[idExterne] ?? null };
 		}
 	};
 }
