@@ -57,6 +57,13 @@
       "when": 1785593435896,
       "tag": "0007_optimal_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1785620963692,
+      "tag": "0008_keen_true_believers",
+      "breakpoints": true
     }
   ]
 }

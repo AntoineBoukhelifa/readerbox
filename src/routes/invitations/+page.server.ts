@@ -3,6 +3,7 @@ import { desc, eq } from 'drizzle-orm';
 import { getDb } from '$lib/server/db';
 import { invitations } from '$lib/server/db/schema';
 import { createInvitation, invitationState, revokeInvitation } from '$lib/server/auth/invitations';
+import { emettreUneReconnexion } from '$lib/server/auth/reconnexion';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
@@ -44,6 +45,23 @@ export const actions: Actions = {
 		if (!emise.ok) return fail(403, { message: 'Tu as quitté le groupe.' });
 
 		return { lien: new URL(`/invitation/${emise.token}`, url.origin).toString() };
+	},
+
+	/**
+	 * Un lien pour se reconnecter soi-même sur un autre appareil.
+	 *
+	 * Aucun paramètre : l'identité vient de la session, donc il n'existe aucune
+	 * façon de demander un lien pour quelqu'un d'autre. C'est la même discipline
+	 * que le journal — ce qui n'est pas exprimable ne se forge pas.
+	 */
+	reconnexion: async ({ locals, platform, url }) => {
+		const d1 = platform?.env?.DB;
+		if (!d1 || !locals.member) return fail(401, { message: 'Session requise.' });
+
+		const emis = await emettreUneReconnexion(getDb(d1), locals.member.id);
+		if (!emis.ok) return fail(403, { message: 'Tu as quitté le groupe.' });
+
+		return { reconnexion: new URL(`/reconnexion/${emis.token}`, url.origin).toString() };
 	},
 
 	revoquer: async ({ request, locals, platform }) => {

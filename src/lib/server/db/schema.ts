@@ -54,6 +54,36 @@ export const invitations = sqliteTable(
 );
 
 /**
+ * Un lien de reconnexion : ouvrir une session sur un autre appareil.
+ *
+ * L'invitation ne sert qu'une fois et crée un membre. Sans cette table, un
+ * membre qui change de navigateur, vide ses cookies ou prend un second appareil
+ * n'a aucune porte : la seule issue serait une nouvelle invitation, qui le
+ * dédoublerait dans le groupe avec un journal vide.
+ *
+ * Le jeton porte donc l'identité d'un membre **existant** et n'en crée jamais.
+ * C'est un porteur de créance au sens plein — il donne l'accès complet à un
+ * compte — d'où les mêmes précautions que l'invitation, en plus strictes : seule
+ * l'empreinte est stockée, l'usage est unique, la durée est courte (une heure
+ * plutôt qu'une semaine), et il est révocable.
+ */
+export const reconnections = sqliteTable(
+	'reconnections',
+	{
+		id: text('id').primaryKey().$defaultFn(uuid),
+		tokenHash: text('token_hash').notNull().unique(),
+		memberId: text('member_id')
+			.notNull()
+			.references(() => members.id),
+		createdAt: integer('created_at').notNull().$defaultFn(now),
+		expiresAt: integer('expires_at').notNull(),
+		consumedAt: integer('consumed_at'),
+		revokedAt: integer('revoked_at')
+	},
+	(table) => [index('reconnections_member_id_idx').on(table.memberId)]
+);
+
+/**
  * Une session authentifiée.
  *
  * Même traitement du jeton que pour les invitations : seule l'empreinte est
@@ -78,6 +108,7 @@ export const sessions = sqliteTable(
 export type Member = typeof members.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
+export type Reconnection = typeof reconnections.$inferSelect;
 
 // ---------------------------------------------------------------------------
 // Catalogue (U3a)

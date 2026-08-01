@@ -33,7 +33,25 @@
 		<p class="mt-4 border-l-2 border-braise pl-4 text-sm text-encre-basse">{form.message}</p>
 	{/if}
 
-	<h2 class="mt-12 enseigne">Tes liens</h2>
+	<h2 class="mt-14 enseigne">Te reconnecter ailleurs</h2>
+	<p class="mt-3 text-sm leading-relaxed text-encre-basse">
+		Pour ouvrir ta session sur un autre appareil, ou après avoir vidé tes cookies. Ce lien te
+		reconnecte <em>toi</em> — il ne crée pas de second compte. Il ne dure qu’une heure et remplace le
+		précédent.
+	</p>
+
+	<form method="POST" action="?/reconnexion" class="mt-6">
+		<button class="action-sourde">Créer un lien de reconnexion</button>
+	</form>
+
+	{#if form?.reconnexion}
+		<div class="mt-6 border-l-2 border-or bg-cimaise px-4 py-3">
+			<p class="font-display text-base text-encre">À ouvrir sur l’autre appareil, dans l’heure.</p>
+			<code class="mt-2 block text-xs break-all text-or">{form.reconnexion}</code>
+		</div>
+	{/if}
+
+	<h2 class="mt-14 enseigne">Tes liens</h2>
 
 	{#if data.liens.length === 0}
 		<p class="mt-3 text-sm text-encre-tenue">Tu n’as encore invité personne.</p>

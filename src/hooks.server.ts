@@ -10,7 +10,7 @@ import { SESSION_COOKIE, resolveSession } from '$lib/server/auth/sessions';
  * qu'on oublie d'ajouter, et c'est exactement le genre d'oubli qui ouvre un
  * groupe fermé.
  */
-const CHEMINS_PUBLICS = ['/', '/invitation'];
+const CHEMINS_PUBLICS = ['/', '/invitation', '/reconnexion'];
 
 function estPublic(pathname: string): boolean {
 	return CHEMINS_PUBLICS.some((chemin) => pathname === chemin || pathname.startsWith(`${chemin}/`));
