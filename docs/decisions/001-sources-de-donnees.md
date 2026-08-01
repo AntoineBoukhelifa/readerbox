@@ -1,87 +1,67 @@
 # 001 — Choix des sources de données
 
-**Statut : en attente de mesure.** Les sondes sont écrites, les comptes ne sont pas créés.
-
-Cette décision conditionne U3b, U9 et U10. Tant qu'elle n'est pas tranchée, aucun adaptateur ne doit être écrit — le but de U1 est justement d'éviter de construire sur une source qu'on aurait supposée bonne.
-
-## Ce qui a déjà été établi
-
-**L'API développeur Marvel n'existe plus.** Vérifié le 2026-08-01 par appel direct : `developer.marvel.com` redirige vers le site grand public, et `gateway.marvel.com` renvoie une erreur serveur là où une requête sans clé devrait être refusée avec un code dédié. Ce n'est pas une dégradation, c'est une disparition. La source la plus évidente pour un projet Marvel est hors jeu.
-
-**TMDB répond correctement.** Vérifié le même jour : une requête non authentifiée reçoit un refus propre, ce qui est le comportement d'une API en bonne santé. C'est la source retenue pour les films, séries, saisons et épisodes, sauf surprise à la lecture des conditions.
-
-**Metron et Comic Vine répondent.** Leurs conditions d'utilisation et leur qualité de données restent à vérifier, et c'est tout l'objet de ce document.
-
-## Les cinq questions
-
-Elles se mesurent avec `node scripts/sondes.js`, après avoir posé les clés dans l'environnement.
-
-### 1. Licence
-
-La licence autorise-t-elle de stocker les données dans une application privée, et de mettre en cache les visuels de couverture ? Quelles sont les obligations d'attribution exactes ?
-
-| Source     | Licence   | Stockage autorisé | Couvertures | Attribution exigée |
-| ---------- | --------- | ----------------- | ----------- | ------------------ |
-| Metron     | à remplir |                   |             |                    |
-| Comic Vine | à remplir |                   |             |                    |
-| TMDB       | à remplir |                   |             |                    |
-
-La question des couvertures n'est pas décorative : l'architecture retenue ne comporte pas de stockage d'objets, donc si la copie locale est exigée il faudra en ajouter un, et si elle est interdite il faudra pointer les URL des sources.
-
-### 2. Débit
-
-Les limites permettent-elles une recherche interactive **pour vingt membres derrière une clé unique** ? Et quel est le plafond de sous-requêtes par invocation, qui borne la taille d'une cascade de recueil ?
-
-| Source     | Limite annoncée | Limite observée | En-têtes de quota | Latence max mesurée |
-| ---------- | --------------- | --------------- | ----------------- | ------------------- |
-| Metron     |                 |                 |                   |                     |
-| Comic Vine |                 |                 |                   |                     |
-| TMDB       |                 |                 |                   |                     |
-
-### 3. Personnages par œuvre
-
-Le champ dont dépend entièrement le graphe. Deux chiffres à relever : la proportion de numéros portant une liste exploitable, et le **nombre médian de crédits par numéro** — ce second chiffre borne le volume d'écriture de U9.
-
-| Source     | 1960 | 1980 | 2000 | 2020 | Crédits, médiane |
-| ---------- | ---- | ---- | ---- | ---- | ---------------- |
-| Metron     |      |      |      |      |                  |
-| Comic Vine |      |      |      |      |                  |
-
-**Seuil de décision, fixé avant la mesure.** Sous **70 %** de couverture sur les numéros postérieurs à 2000, la dimension personnage du graphe est abandonnée : R49 passe de trois types de relation à deux, le graphe se réduit aux relations série et event, et U10 perd son filtre à trois dimensions. Cette forme dégradée est une variante nommée, pas une improvisation à décider en phase 3.
-
-La lacune sur les décennies anciennes est une limite acceptée du projet, pas un défaut à corriger. On la mesure pour la connaître, pas pour la combler.
-
-### 4. Composition des recueils
-
-Quelle proportion de recueils et d'omnibus expose la liste des numéros qu'ils contiennent ? Toute l'unité U5 en dépend, et les bases modélisent les recueils différemment.
-
-| Source     | Recueils testés | Contenu exposé | Format |
-| ---------- | --------------- | -------------- | ------ |
-| Metron     |                 |                |        |
-| Comic Vine |                 |                |        |
-
-Si aucune source ne l'expose de façon exploitable, la cascade de recueil devient déclarative — le membre saisit lui-même les numéros — ce qui change la nature de U5 et doit être décidé ici.
-
-### 5. Parcours par facette
-
-Chaque source expose-t-elle les apparitions d'un personnage, les œuvres d'une série, d'un créateur, d'un event ? KTD1 en fait un chemin amont, donc l'interface d'adaptateur doit le porter.
-
-| Source     | Personnage | Série | Créateur | Event | Pagination |
-| ---------- | ---------- | ----- | -------- | ----- | ---------- |
-| Metron     |            |       |          |       |            |
-| Comic Vine |            |       |          |       |            |
-| TMDB       |            |       |          |       |            |
+**Statut : tranché sur les données, sauf la licence.** Mesuré le 2026-08-01 avec `node --env-file=.dev.vars scripts/sondes.js`.
 
 ## Décision
 
-_À écrire une fois les mesures faites._ Doit nommer :
+**Metron est la source primaire pour les comics. TMDB pour les films et séries. Comic Vine est écartée.**
 
-- la source primaire pour les comics, et la source de complément
-- la source pour l'audiovisuel
-- la conclusion sur le seuil de 70 %, et donc la forme retenue du graphe
-- la politique de couvertures
-- ce qui se passe si une source ferme — le repli, et son coût
+La dimension personnage du graphe est **conservée** : le seuil de 70 % fixé avant la mesure est franchi avec 83 % sur le post-2000.
 
-## Repli si aucune source ne convient
+## Ce qui a été établi
 
-La Grand Comics Database publie des exports de base, pas une API de recherche. S'y replier **invalide KTD1** : on ne peut pas interroger l'amont en direct, donc il faut importer et maintenir un dump local, ce qui ramène le problème de volume que l'ingestion paresseuse avait supprimé. Ce n'est pas un ajustement de U3, c'est un changement d'architecture, et il faut le traiter comme tel avant de s'y engager.
+**L'API développeur Marvel n'existe plus.** Vérifié par appel direct : `developer.marvel.com` redirige vers le site grand public, et `gateway.marvel.com` renvoie une erreur serveur là où une requête sans clé devrait être refusée avec un code dédié. Ce n'est pas une dégradation, c'est une disparition.
+
+**Comic Vine est écartée pour deux raisons qui se cumulent.** La clé n'a pas pu être obtenue malgré la création d'un compte — ce qui est cohérent avec ce que la recherche annonçait : rachat par Fandom, licenciements répétés chez GameSpot, panne de six jours en 2024, « aucune présence développeur depuis des années ». Et surtout elle est devenue **inutile** : Metron passe le seuil seule. La source au meilleur champ de données était aussi celle au pire pronostic de pérennité ; ne pas en dépendre est un gain, pas un renoncement.
+
+## Les mesures
+
+### Metron — comics
+
+| Décennie   | Couverture personnages |
+| ---------- | ---------------------- |
+| 1960       | 3/3 (100 %)            |
+| 1980       | 2/3 (67 %)             |
+| 2000       | 2/3 (67 %)             |
+| 2020       | 3/3 (100 %)            |
+| **Global** | **10/11 (91 %)**       |
+
+- **Post-2000 : 83 %** — au-dessus du seuil de 70 %, la dimension personnage tient
+- **Médiane de 10,5 crédits par numéro** — c'est le chiffre qui borne le volume d'écriture du graphe (KTD4). Une douzaine de lignes d'appui par consignation, très loin des plafonds Cloudflare
+- **Parcours par personnage : exposé** (`/api/character/{id}/`)
+- Sert aussi les **crédits créateurs** (médiane autour de 10) et les **arcs narratifs**
+- Latence maximale observée : 1742 ms
+
+**Débit — la contrainte la plus dure.** Metron étrangle vers la dizaine d'appels consécutifs et renvoie un 429 annonçant le délai dans le corps de la réponse (« Expected available in 12 seconds »). Une cadence de **2,5 s entre appels** passe sans incident. C'est une contrainte structurante pour l'ingestion en cascade : un recueil de quarante numéros ne peut pas être ingéré d'un trait, ce que le fractionnement de U5 prévoyait déjà.
+
+### TMDB — films et séries
+
+- 4/4 trouvés, **affiches disponibles** pour tous
+- Latence maximale : 527 ms, sans étranglement observé
+- Médiane de 78 au casting
+
+**Nuance importante : le casting TMDB liste des acteurs, pas des personnages de fiction.** Il ne nourrit donc pas la dimension personnage du graphe au sens de R49. Les films entreront dans le graphe par leur série et leur event, pas par leurs personnages — sauf à rapprocher un acteur de son rôle, ce qui est un autre travail.
+
+### Composition des recueils
+
+Metron modélise les recueils comme des **séries de type « trade paperback »** plutôt que comme un type d'œuvre distinct. Trois requêtes de contrôle trouvent bien les séries correspondantes, mais **la liste des numéros contenus reste à confirmer sur une fiche précise** — c'est la donnée dont dépend toute la cascade de U5, et elle n'est pas encore vérifiée.
+
+## Ce qui reste ouvert, et qui peut tout changer
+
+**Les licences n'ont pas été lues.** C'était la première des cinq questions de U1 et elle n'est pas tranchée. Trois points à vérifier avant que U3b ne persiste quoi que ce soit durablement :
+
+| Question                                        | Metron | TMDB   |
+| ----------------------------------------------- | ------ | ------ |
+| Stocker les données dans une application privée | à lire | à lire |
+| Mettre en cache les couvertures et affiches     | à lire | à lire |
+| Obligations d'attribution exactes               | à lire | à lire |
+
+C'est le seul point qui pourrait encore invalider l'architecture. Une interdiction de stockage local reviendrait à interdire l'ingestion paresseuse de KTD1 ; une interdiction de cache des visuels obligerait à pointer les URL des sources, ce que l'architecture actuelle — sans stockage d'objets — impose de toute façon pour l'instant.
+
+## Une leçon de méthode, gardée volontairement
+
+La **première** exécution des sondes a conclu à **0 % de couverture personnages** et recommandé d'amputer le graphe de sa dimension principale.
+
+Elle était fausse. Le script interrogeait Metron sur `name`, qui cherche dans le _titre de l'histoire_ et non dans le nom de la série ; il tombait sur des numéros obscurs que la communauté n'a pas indexés, et concluait à l'absence d'une donnée qui était là. Le bon paramètre est `series_name`.
+
+**Une mesure fausse est pire qu'une mesure absente : elle a l'air d'une réponse.** Sans vérification de la forme réelle de la réponse, la dimension personnage du graphe aurait été supprimée sur la foi d'un accesseur mal écrit. Le commentaire en tête de `scripts/sondes.js` garde la trace de l'épisode.
