@@ -1,0 +1,45 @@
+# Dépendances
+node_modules/
+.pnpm-store/
+
+# Build SvelteKit
+.svelte-kit/
+build/
+dist/
+
+# Cloudflare Workers / Wrangler
+.wrangler/
+.dev.vars
+.dev.vars.*
+worker-configuration.d.ts
+
+# Secrets et configuration locale
+.env
+.env.*
+!.env.example
+
+# Base de données locale
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# Système
+.DS_Store
+Thumbs.db
+
+# Éditeurs
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Tests et couverture
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
