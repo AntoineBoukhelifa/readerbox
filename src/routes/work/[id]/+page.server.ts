@@ -50,7 +50,13 @@ export const load: PageServerLoad = async ({ params, locals, platform }) => {
 			numeroDansLaSerie: oeuvre.numeroDansLaSerie
 		},
 		agregat,
-		lecteurs,
+		// R38 — le nom d'un membre parti n'est pas remplacé au rendu : il n'est pas
+		// envoyé. C'est la même discipline que pour les textes masqués, et pour la
+		// même raison — ce qui n'est pas dans la charge utile ne peut pas fuir.
+		lecteurs: lecteurs.map((lecteur) => ({
+			...lecteur,
+			nom: lecteur.parti ? null : lecteur.nom
+		})),
 		moi: moi === null ? null : { atteinte: moi.atteinte, position: moi.position },
 		// La reconstruction est explicite plutôt qu'un `...avis` : ce qui part au
 		// navigateur se lit ici, champ par champ.

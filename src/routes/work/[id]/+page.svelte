@@ -56,13 +56,13 @@
 			{#if arrives.length > 0}
 				<li>
 					<span class="text-neutral-500">L’ont atteinte :</span>
-					{arrives.map((lecteur) => (lecteur.parti ? 'un membre parti' : lecteur.nom)).join(', ')}
+					{arrives.map((lecteur) => lecteur.nom ?? 'un membre parti').join(', ')}
 				</li>
 			{/if}
 			{#each enRoute as lecteur (lecteur.membreId)}
 				<li>
 					<span class="text-neutral-500">En cours :</span>
-					{lecteur.parti ? 'un membre parti' : lecteur.nom}
+					{lecteur.nom ?? 'un membre parti'}
 					{#if lecteur.position > 0}· {pourcentage(lecteur.position)}{/if}
 				</li>
 			{/each}

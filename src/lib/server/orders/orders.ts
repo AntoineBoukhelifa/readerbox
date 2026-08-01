@@ -13,6 +13,7 @@ import type { Db } from '../db';
 import type { TypeOeuvre } from '../catalog/sources/types';
 import { titresCorriges } from '../catalog/corrections';
 import { estAtteinte } from '../journal/atteinte';
+import { journaliserOrdreCree, journaliserOrdreSuivi, retracterOrdre } from '../feed/events';
 import { calculerProgression, type EntreeDOrdre, type Progression } from './progression';
 
 /**
@@ -202,6 +203,10 @@ export async function creerOrdre(
 		})
 		.returning({ id: orders.id });
 
+	// R41 — un ordre créé est un événement du fil, et c'est le plus rare des sept :
+	// écrire un ordre est le geste coûteux qu'une personne fait pour tout le groupe.
+	await journaliserOrdreCree(db, { membreId: options.membreId, ordreId: ligne.id, now });
+
 	return { ok: true, ordreId: ligne.id };
 }
 
@@ -262,6 +267,9 @@ export async function supprimerOrdre(
 	await db.delete(orderFollows).where(eq(orderFollows.orderId, options.ordreId));
 	await db.delete(orderEntries).where(eq(orderEntries.orderId, options.ordreId));
 	await db.delete(orders).where(eq(orders.id, options.ordreId));
+	// Les événements du fil qui le désignaient ne mènent plus nulle part : « X a
+	// suivi un ordre supprimé » n'apprend rien et ne se clique pas.
+	await retracterOrdre(db, options.ordreId);
 
 	return { ok: true };
 }
@@ -323,6 +331,10 @@ export async function forker(
 			}))
 		);
 	}
+
+	// R41 — un fork est un ordre créé. R17 en fait un objet à part entière ; le
+	// fil le dit comme tel plutôt que d'inventer un huitième type d'événement.
+	await journaliserOrdreCree(db, { membreId: options.membreId, ordreId: copie.id, now });
 
 	return { ok: true, ordreId: copie.id };
 }
@@ -697,10 +709,24 @@ export async function suivre(
 	const membre = await db.query.members.findFirst({ where: eq(members.id, options.membreId) });
 	if (!membre) return { ok: false, motif: 'membre introuvable' };
 
+	// R41 — seul le premier suivi entre au fil. Le geste est idempotent (R36 le
+	// veut : cesser de suivre puis suivre à nouveau ne perd rien) et un fil qui
+	// répéterait « X suit cet ordre » à chaque aller-retour serait du bruit.
+	const deja = await db.query.orderFollows.findFirst({
+		where: and(
+			eq(orderFollows.orderId, options.ordreId),
+			eq(orderFollows.memberId, options.membreId)
+		)
+	});
+
 	await db
 		.insert(orderFollows)
 		.values({ orderId: options.ordreId, memberId: options.membreId, createdAt: now })
 		.onConflictDoNothing();
+
+	if (!deja) {
+		await journaliserOrdreSuivi(db, { membreId: options.membreId, ordreId: options.ordreId, now });
+	}
 
 	return { ok: true };
 }

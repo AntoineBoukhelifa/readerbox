@@ -35,13 +35,15 @@
 	];
 </script>
 
-<svelte:head><title>Journal de {data.membre.nom} — readerbox</title></svelte:head>
+<svelte:head
+	><title>Journal de {data.membre.nom ?? 'un membre parti'} — readerbox</title></svelte:head
+>
 
 <main class="mx-auto max-w-2xl px-6 py-16">
 	<a href={resolve('/')} class="text-sm text-neutral-500 underline underline-offset-4">Retour</a>
 
 	<h1 class="mt-6 text-2xl font-semibold tracking-tight">
-		Journal de {data.membre.parti ? 'un membre parti' : data.membre.nom}
+		Journal de {data.membre.nom ?? 'un membre parti'}
 	</h1>
 
 	{#if data.entrees.length === 0}
@@ -69,7 +71,7 @@
 							     qu'un avis existe et qui l'a écrit (R31). -->
 							<MaskedText
 								oeuvreId={entree.avis.oeuvreId}
-								auteur={data.membre.parti ? 'Un membre parti' : data.membre.nom}
+								auteur={data.membre.nom ?? 'Un membre parti'}
 								masque={entree.avis.masque}
 								texte={entree.avis.texte}
 							/>

@@ -38,8 +38,12 @@ export const actions: Actions = {
 		const d1 = platform?.env?.DB;
 		if (!d1 || !locals.member) return fail(401, { message: 'Session requise.' });
 
-		const { token } = await createInvitation(getDb(d1), { createdBy: locals.member.id });
-		return { lien: new URL(`/invitation/${token}`, url.origin).toString() };
+		const emise = await createInvitation(getDb(d1), { createdBy: locals.member.id });
+		// R38 — un membre parti ne fait plus entrer personne, et la règle est
+		// vérifiée par l'émission elle-même, pas seulement par la session.
+		if (!emise.ok) return fail(403, { message: 'Tu as quitté le groupe.' });
+
+		return { lien: new URL(`/invitation/${emise.token}`, url.origin).toString() };
 	},
 
 	revoquer: async ({ request, locals, platform }) => {

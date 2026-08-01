@@ -69,7 +69,13 @@ export const load: PageServerLoad = async ({ params, locals, platform }) => {
 	});
 
 	return {
-		membre: { id: membre.id, nom: membre.displayName, parti: membre.leftAt !== null },
+		// R38 — un membre parti n'est plus nommé, et son nom n'est pas envoyé pour
+		// être remplacé au rendu : il n'est pas envoyé du tout.
+		membre: {
+			id: membre.id,
+			nom: membre.leftAt === null ? membre.displayName : null,
+			parti: membre.leftAt !== null
+		},
 		soiMeme: locals.member.id === membre.id,
 		ordres: {
 			crees: ordres.crees.map(resumer),

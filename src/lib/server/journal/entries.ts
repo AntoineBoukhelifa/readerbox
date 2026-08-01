@@ -20,6 +20,15 @@ import {
 	type SensDeFranchissement
 } from './atteinte';
 import { signalerFranchissement } from './frontiere';
+import {
+	etatConsigne,
+	journaliserAvis,
+	journaliserNote,
+	journaliserTransition,
+	retracterAvis,
+	retracterConsignation,
+	signalerRecommandationSuivie
+} from '../feed/events';
 import { cascadeDescendante, etatLePlusAvance } from './contenance';
 import { planifierCascade } from './travaux';
 import {
@@ -35,7 +44,7 @@ import { publicationAutorisee } from '../masking/visibility';
  *
  * **Ce module est le seul à écrire dans `journal_entries`.** C'est ce qui donne
  * son sens au point d'appel unique : chaque mutation d'état de lecture passe par
- * `signalerLeFranchissement`, donc aucune surface ne peut oublier de notifier
+ * `noterLaTransition`, donc aucune surface ne peut oublier de notifier
  * les mécaniques qui en dépendent (U6, U7, U9). Une écriture directe depuis une
  * route ou depuis une autre unité contournerait la notification, et le défaut
  * serait silencieux — un graphe qui ne s'étend plus, un ordre qui n'avance plus,
@@ -175,22 +184,63 @@ function etatDe(entree: JournalEntry) {
 /**
  * Le passage obligé de toute modification d'état de lecture.
  *
- * Compare l'avant et l'après **par le prédicat**, jamais par les champs, et
- * n'enfile une demande que si la frontière a réellement été franchie.
+ * **Trois conséquences y sont tenues ensemble**, et c'est ce qui fait qu'aucune
+ * ne peut être oubliée par une surface :
+ *
+ * 1. **la file de franchissement** (U4), pour les appuis du graphe (U9). Elle ne
+ *    reçoit que les franchissements réels, comparés **par le prédicat** et jamais
+ *    par les champs : passer de « terminé » à « abandonné » ne franchit rien ;
+ * 2. **le fil du groupe** (U8, R41), qui reçoit au contraire *chaque* transition,
+ *    franchissement ou non. Les deux besoins sont opposés — l'un veut l'état
+ *    final, l'autre l'histoire — et c'est pourquoi le fil a sa propre table
+ *    plutôt que de lire celle du graphe ;
+ * 3. **la notification de R43**, quand et seulement quand la frontière est
+ *    franchie dans le sens de l'atteinte et que la consignation venait d'un autre
+ *    membre. R43 est explicite : c'est l'atteinte qui informe, pas la
+ *    consignation.
+ *
+ * `pivotId` est ce que R43 agrège : le recueil quand l'atteinte vient d'une
+ * cascade, l'œuvre elle-même sinon. C'est le seul paramètre par lequel la
+ * cascade se distingue ici, et il ne sert qu'à ça.
  */
-async function signalerLeFranchissement(
+async function noterLaTransition(
 	db: Db,
 	membreId: string,
 	oeuvreId: string,
 	avant: JournalEntry | null,
 	apres: JournalEntry | null,
-	now: number
+	now: number,
+	pivotId?: string
 ): Promise<SensDeFranchissement | null> {
 	const sens = franchissement(
 		avant === null ? null : etatDe(avant),
 		apres === null ? null : etatDe(apres)
 	);
 	if (sens !== null) await signalerFranchissement(db, { membreId, oeuvreId, sens }, now);
+
+	await journaliserTransition(db, {
+		membreId,
+		oeuvreId,
+		avant: etatConsigne(avant),
+		apres: etatConsigne(apres),
+		now
+	});
+
+	// R42 conserve la provenance, R43 en tire une conséquence — et une seule.
+	if (
+		sens === 'atteinte' &&
+		apres !== null &&
+		apres.provenance === 'membre' &&
+		apres.provenanceMemberId !== null
+	) {
+		await signalerRecommandationSuivie(db, {
+			destinataireId: apres.provenanceMemberId,
+			acteurId: membreId,
+			oeuvrePivotId: pivotId ?? oeuvreId,
+			now
+		});
+	}
+
 	return sens;
 }
 
@@ -312,7 +362,7 @@ async function remonterVersLesContenants(
 					})
 					.returning();
 
-		await signalerLeFranchissement(db, membreId, contenantId, avant, apres, now);
+		await noterLaTransition(db, membreId, contenantId, avant, apres, now);
 	}
 }
 
@@ -421,13 +471,16 @@ export async function appliquerAppui(
 		.values({ entryId: apres.id, containerWorkId: options.contenantId, createdAt: now })
 		.onConflictDoNothing();
 
-	const sens = await signalerLeFranchissement(
+	// Le recueil est le pivot de R43 : quarante numéros atteints par une même
+	// cascade tiennent en une notification, pas quarante.
+	const sens = await noterLaTransition(
 		db,
 		options.membreId,
 		options.oeuvreId,
 		avant,
 		apres,
-		now
+		now,
+		options.contenantId
 	);
 
 	// Atteindre un numéro par cascade peut compléter un *autre* recueil que le
@@ -469,14 +522,9 @@ export async function retirerAppui(
 		await db.delete(reviews).where(eq(reviews.entryId, avant.id));
 		await db.delete(journalEntries).where(eq(journalEntries.id, avant.id));
 
-		const sens = await signalerLeFranchissement(
-			db,
-			options.membreId,
-			options.oeuvreId,
-			avant,
-			null,
-			now
-		);
+		const sens = await noterLaTransition(db, options.membreId, options.oeuvreId, avant, null, now);
+		// L'entrée n'existe plus : le fil ne peut plus renvoyer vers elle (R33).
+		await retracterConsignation(db, { membreId: options.membreId, oeuvreId: options.oeuvreId });
 		return { franchissement: sens, entreeSupprimee: true };
 	}
 
@@ -498,14 +546,7 @@ export async function retirerAppui(
 		}
 	}
 
-	const sens = await signalerLeFranchissement(
-		db,
-		options.membreId,
-		options.oeuvreId,
-		avant,
-		apres,
-		now
-	);
+	const sens = await noterLaTransition(db, options.membreId, options.oeuvreId, avant, apres, now);
 	return { franchissement: sens, entreeSupprimee: false };
 }
 
@@ -582,14 +623,7 @@ export async function consigner(
 				})
 				.returning();
 
-	const sens = await signalerLeFranchissement(
-		db,
-		options.membreId,
-		options.oeuvreId,
-		avant,
-		apres,
-		now
-	);
+	const sens = await noterLaTransition(db, options.membreId, options.oeuvreId, avant, apres, now);
 
 	await apresGesteDeMembre(db, options.membreId, options.oeuvreId, oeuvre.type, avant, apres, now);
 
@@ -657,14 +691,7 @@ export async function abandonner(
 		.where(eq(journalEntries.id, avant.id))
 		.returning();
 
-	const sens = await signalerLeFranchissement(
-		db,
-		options.membreId,
-		options.oeuvreId,
-		avant,
-		apres,
-		now
-	);
+	const sens = await noterLaTransition(db, options.membreId, options.oeuvreId, avant, apres, now);
 
 	await apresGesteDeMembre(
 		db,
@@ -707,14 +734,7 @@ export async function reprendre(
 		.where(eq(journalEntries.id, avant.id))
 		.returning();
 
-	const sens = await signalerLeFranchissement(
-		db,
-		options.membreId,
-		options.oeuvreId,
-		avant,
-		apres,
-		now
-	);
+	const sens = await noterLaTransition(db, options.membreId, options.oeuvreId, avant, apres, now);
 
 	await apresGesteDeMembre(
 		db,
@@ -772,14 +792,7 @@ export async function declarerPosition(
 		.where(eq(journalEntries.id, entree.id))
 		.returning();
 
-	const sens = await signalerLeFranchissement(
-		db,
-		options.membreId,
-		options.oeuvreId,
-		entree,
-		apres,
-		now
-	);
+	const sens = await noterLaTransition(db, options.membreId, options.oeuvreId, entree, apres, now);
 
 	await apresGesteDeMembre(
 		db,
@@ -822,6 +835,17 @@ export async function noter(
 		.update(journalEntries)
 		.set({ rating: options.note, updatedAt: now })
 		.where(eq(journalEntries.id, entree.id));
+
+	// R41 — la note est l'un des sept événements du fil. Elle n'a pas sa place
+	// dans `noterLaTransition` : elle ne déplace aucun état de lecture, et l'y
+	// faire entrer obligerait cette fonction à comparer des champs qui ne
+	// regardent ni le graphe ni R43.
+	await journaliserNote(db, {
+		membreId: options.membreId,
+		oeuvreId: options.oeuvreId,
+		note: options.note,
+		now
+	});
 
 	// Noter ne touche ni à l'étagère ni à l'abandon : aucune frontière ne bouge.
 	return {
@@ -885,14 +909,7 @@ export async function retirer(
 		await db.delete(journalEntries).where(eq(journalEntries.id, entree.id));
 	}
 
-	const sens = await signalerLeFranchissement(
-		db,
-		options.membreId,
-		options.oeuvreId,
-		entree,
-		apres,
-		now
-	);
+	const sens = await noterLaTransition(db, options.membreId, options.oeuvreId, entree, apres, now);
 
 	// L'entrée du contenant a disparu : ses numéros perdent l'appui qu'elle leur
 	// donnait, et ceux que plus rien ne soutient s'en vont avec elle. Quarante
@@ -902,6 +919,11 @@ export async function retirer(
 	} else {
 		await apresGesteDeMembre(db, options.membreId, options.oeuvreId, type, entree, apres, now);
 	}
+
+	// R33 — le fil oublie ce que la consignation y avait mis, y compris la note et
+	// l'avis que le retrait vient d'emporter. Après les effets de cascade, pour
+	// qu'aucun d'eux ne réécrive ce qu'on vient d'effacer.
+	await retracterConsignation(db, { membreId: options.membreId, oeuvreId: options.oeuvreId });
 
 	return {
 		ok: true,
@@ -967,6 +989,10 @@ export async function ecrireAvis(
 		})
 		.returning({ id: reviews.id });
 
+	// R41 — le fil dit qu'un avis existe. Le texte, lui, ne quitte pas cette
+	// fonction : `journaliserAvis` n'a pas de paramètre pour le recevoir.
+	await journaliserAvis(db, { membreId: options.membreId, oeuvreId: options.oeuvreId, now });
+
 	return { ok: true, avisId: ligne.id };
 }
 
@@ -1003,6 +1029,9 @@ export async function supprimerAvis(
 	if (!avis) return { ok: false, motif: 'avis introuvable' };
 
 	await db.delete(reviews).where(eq(reviews.id, options.avisId));
+	// L'avis n'existe plus : le fil ne peut plus annoncer qu'il a été écrit.
+	await retracterAvis(db, { membreId: options.membreId, oeuvreId: avis.oeuvreId });
+
 	return { ok: true, avisId: options.avisId };
 }
 
@@ -1015,7 +1044,10 @@ export async function supprimerAvis(
  */
 async function avisPossede(db: Db, membreId: string, avisId: string) {
 	const [ligne] = await db
-		.select({ id: reviews.id })
+		// L'œuvre est rendue avec l'avis parce que R37 désigne l'avis par son
+		// identifiant alors que le fil, lui, désigne toujours un couple
+		// membre-œuvre. La jointure existe déjà : la lire ne coûte rien.
+		.select({ id: reviews.id, oeuvreId: journalEntries.workId })
 		.from(reviews)
 		.innerJoin(journalEntries, eq(journalEntries.id, reviews.entryId))
 		.where(and(eq(reviews.id, avisId), eq(journalEntries.memberId, membreId)));

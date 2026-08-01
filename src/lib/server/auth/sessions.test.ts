@@ -14,8 +14,18 @@ import { generateToken } from './tokens';
 
 const T0 = 1_700_000_000_000;
 
+/** Émet une invitation dont on attend qu'elle aboutisse (R38 rend l'émission refusable). */
+async function emettre(
+	db: ReturnType<typeof createTestDb>,
+	options: { createdBy?: string | null; now?: number } = {}
+) {
+	const resultat = await createInvitation(db, options);
+	if (!resultat.ok) throw new Error(`émission refusée : ${resultat.motif}`);
+	return resultat;
+}
+
 async function memberWithSession(db: ReturnType<typeof createTestDb>, name = 'Antoine') {
-	const { token: invite } = await createInvitation(db, { createdBy: null, now: T0 });
+	const { token: invite } = await emettre(db, { createdBy: null, now: T0 });
 	const redeemed = await redeemInvitation(db, invite, name, T0);
 	if (!redeemed.ok) throw new Error('la porte fondatrice devrait toujours s ouvrir');
 	const session = await createSession(db, redeemed.memberId, { now: T0 });
@@ -113,7 +123,7 @@ describe('départ du groupe', () => {
 	it('ne touche pas aux sessions des autres membres', async () => {
 		const db = createTestDb();
 		const partant = await memberWithSession(db, 'Antoine');
-		const { token: invite } = await createInvitation(db, {
+		const { token: invite } = await emettre(db, {
 			createdBy: partant.memberId,
 			now: T0
 		});

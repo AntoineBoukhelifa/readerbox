@@ -22,6 +22,8 @@
 				Les ordres
 			</a>
 
+			<a href={resolve('/feed')} class="text-sm underline underline-offset-4">Le fil</a>
+
 			<a href={resolve('/invitations')} class="text-sm underline underline-offset-4">
 				Inviter quelqu’un
 			</a>

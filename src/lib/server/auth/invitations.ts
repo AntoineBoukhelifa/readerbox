@@ -23,12 +23,25 @@ export function invitationState(invitation: Invitation, now: number): Invitation
 	return 'valide';
 }
 
+export type ResultatEmission =
+	| { ok: true; token: string; invitationId: string }
+	/** R38 — un membre qui a quitté le groupe ne fait plus entrer personne. */
+	| { ok: false; motif: 'membre parti' };
+
 /**
- * Émet une invitation. Tout membre peut le faire — il n'y a pas de rôle
+ * Émet une invitation. Tout membre présent peut le faire — il n'y a pas de rôle
  * d'administration dans ce produit.
  *
  * `createdBy` vaut null pour l'invitation fondatrice, celle qui fait entrer le
  * premier membre.
+ *
+ * **R38 est vérifié ici, et pas seulement par la session.** Un membre parti n'a
+ * plus de session valide — `resolveSession` le refuse deux fois — donc en
+ * pratique il n'atteint jamais cette fonction. Mais faire dépendre une règle du
+ * produit de l'expiration d'un jeton, c'est la faire dépendre d'autre chose
+ * qu'elle-même : le jour où une invitation s'émet depuis un autre chemin — une
+ * tâche planifiée, un endpoint d'API — la règle tiendrait toujours. C'est le
+ * même parti pris que `ordreModifiable` dans les ordres.
  *
  * Retourne le jeton en clair : c'est la seule et unique fois où il est
  * disponible. Il n'est plus jamais récupérable ensuite.
@@ -36,8 +49,16 @@ export function invitationState(invitation: Invitation, now: number): Invitation
 export async function createInvitation(
 	db: Db,
 	options: { createdBy?: string | null; ttlMs?: number; now?: number } = {}
-): Promise<{ token: string; invitationId: string }> {
+): Promise<ResultatEmission> {
 	const now = options.now ?? Date.now();
+
+	if (options.createdBy) {
+		const emetteur = await db.query.members.findFirst({
+			where: eq(members.id, options.createdBy)
+		});
+		if (!emetteur || emetteur.leftAt !== null) return { ok: false, motif: 'membre parti' };
+	}
+
 	const token = generateToken();
 
 	const [row] = await db
@@ -50,7 +71,7 @@ export async function createInvitation(
 		})
 		.returning({ id: invitations.id });
 
-	return { token, invitationId: row.id };
+	return { ok: true, token, invitationId: row.id };
 }
 
 /**

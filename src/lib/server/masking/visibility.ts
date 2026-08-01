@@ -2,7 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { journalEntries, reveals, works } from '../db/schema';
 import type { Db } from '../db';
 import type { TypeOeuvre } from '../catalog/sources/types';
-import { estAtteinte } from '../journal/atteinte';
+import { estAtteinte, type Etagere } from '../journal/atteinte';
 import { positionEffective } from '../journal/position';
 
 /**
@@ -343,4 +343,148 @@ export function publicationAutorisee(contexte: {
 	if (contexte.atteinte) return true;
 	if (!estOeuvreLongue(contexte.typeOeuvre)) return true;
 	return contexte.positionDeclaree !== null && contexte.positionDeclaree > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Le titre dans le fil (R32)
+// ---------------------------------------------------------------------------
+
+/**
+ * **Une seconde règle, plus étroite, et qui vit ici pour la même raison que la
+ * première.**
+ *
+ * R32 ne dit pas ce que dit R27, et il ne faut surtout pas les confondre : le
+ * texte d'un avis est masqué tant que l'œuvre n'est pas *atteinte*, alors qu'un
+ * titre du fil n'est masqué que pour un membre qui a placé l'œuvre sur son
+ * étagère « à découvrir ». La différence est assumée par le document d'origine —
+ * « ailleurs, les titres du fil sont visibles » — et elle est la seule tenable :
+ * on ne peut pas masquer cinquante mille titres qu'un membre n'a pas lus sans
+ * rendre le fil illisible. Ce qu'on protège, c'est une **intention déclarée** :
+ * quelqu'un a dit vouloir découvrir cette œuvre, on ne la lui gâche pas.
+ *
+ * Cette règle est ici et non dans `feed/events.ts` parce que c'est du masquage,
+ * et que KTD5 vaut pour le masquage entier et pas seulement pour R27 : deux
+ * fichiers qui décident chacun de ce qu'on voit, c'est exactement le défaut
+ * qu'on prévient.
+ *
+ * **La forme du masque est le type de l'œuvre**, pas un blanc ni un symbole.
+ * « Camille a terminé un numéro de comic » se lit ; « Camille a terminé ??? » ne
+ * dit rien à personne et donne à croire que le produit est cassé. Le type ne
+ * fuit rien : le membre a lui-même mis l'œuvre sur son étagère, il sait déjà de
+ * quelle sorte d'objet il s'agit.
+ */
+
+/** Ce qu'on affiche à la place d'un titre masqué. Accordé pour entrer dans une phrase. */
+export const LIBELLE_DE_TYPE: Record<TypeOeuvre, string> = {
+	numero: 'un numéro de comic',
+	recueil: 'un recueil',
+	film: 'un film',
+	serie: 'une série',
+	saison: 'une saison',
+	episode: 'un épisode',
+	roman: 'un roman'
+};
+
+/** Une œuvre disparue du catalogue n'a plus de type : elle reste une œuvre. */
+export const LIBELLE_SANS_TYPE = 'une œuvre';
+
+export function libelleDeType(type: TypeOeuvre | null): string {
+	return type === null ? LIBELLE_SANS_TYPE : LIBELLE_DE_TYPE[type];
+}
+
+/** Un titre soumis à R32, et de quoi décider. */
+export interface TitreMasquable {
+	oeuvreId: string;
+	titre: string;
+	/** L'auteur du geste. Un membre voit toujours le titre de ses propres événements. */
+	acteurId: string;
+}
+
+export type TitreDuFil = {
+	oeuvreId: string;
+	/** Absent quand le titre est masqué — jamais mis à `null` après coup. */
+	titre: string | null;
+	/** Ce qu'une surface affiche : le titre, ou le type de l'œuvre. */
+	libelle: string;
+	masque: boolean;
+};
+
+/**
+ * R32 — ce titre est-il lisible par ce membre ?
+ *
+ * Pure, et volontairement sans base : c'est ici et nulle part ailleurs que la
+ * décision se prend.
+ *
+ * Trois choses, et l'ordre entre elles n'arbitre rien :
+ *
+ * 1. **ses propres événements.** Un membre voit toujours le titre de ce qu'il a
+ *    fait lui-même — même exemption que l'auteur sous R27, et pour une raison
+ *    plus forte encore : il vient de poser l'œuvre sur son étagère, il en connaît
+ *    le titre. Le lui masquer transformerait son propre fil en suite de « un
+ *    numéro de comic » sans rien protéger de personne.
+ * 2. **l'étagère « à découvrir ».** La seule condition de masquage de R32.
+ * 3. **l'atteinte.** Une œuvre abandonnée depuis « à découvrir » est atteinte
+ *    (R3) : plus rien à protéger, et R27 lui ouvrirait déjà les textes. Masquer
+ *    son titre pendant qu'on lui sert les avis serait incohérent.
+ */
+export function titreLisibleDansLeFil(
+	regard: { etagere: Etagere | null; atteinte: boolean },
+	acteurId: string,
+	lecteurId: string
+): boolean {
+	if (acteurId === lecteurId) return true;
+	if (regard.atteinte) return true;
+	return regard.etagere !== 'a_decouvrir';
+}
+
+/**
+ * Le passage obligé de tout titre d'œuvre vers le fil.
+ *
+ * Rend un tableau **parallèle à l'entrée** et non une table indexée par œuvre :
+ * deux événements peuvent porter la même œuvre avec deux acteurs différents, et
+ * l'exemption du point 1 ci-dessus ne vaut que pour l'un d'eux.
+ *
+ * Comme `masquer`, la fonction **retire** le titre au lieu de poser un drapeau à
+ * côté : ce qui n'est pas dans l'objet ne peut pas partir dans la charge utile.
+ *
+ * Deux requêtes pour le lot entier, quel que soit le nombre d'événements — un
+ * fil de cinquante lignes ne doit pas coûter cent allers-retours (KTD2).
+ */
+export async function masquerTitres(
+	db: Db,
+	lecteurId: string,
+	titres: readonly TitreMasquable[]
+): Promise<TitreDuFil[]> {
+	if (titres.length === 0) return [];
+
+	const ids = [...new Set(titres.map((titre) => titre.oeuvreId))];
+
+	const [types, entrees] = await Promise.all([
+		db.select({ id: works.id, type: works.type }).from(works).where(inArray(works.id, ids)),
+		db.query.journalEntries.findMany({
+			where: and(eq(journalEntries.memberId, lecteurId), inArray(journalEntries.workId, ids))
+		})
+	]);
+
+	const typeParOeuvre = new Map(types.map((ligne) => [ligne.id, ligne.type]));
+	const entreeParOeuvre = new Map(entrees.map((entree) => [entree.workId, entree]));
+
+	return titres.map((titre) => {
+		const entree = entreeParOeuvre.get(titre.oeuvreId) ?? null;
+		const etat =
+			entree === null ? null : { etagere: entree.shelf, abandonnee: entree.abandonedAt !== null };
+
+		const lisible = titreLisibleDansLeFil(
+			{ etagere: etat?.etagere ?? null, atteinte: etat !== null && estAtteinte(etat) },
+			titre.acteurId,
+			lecteurId
+		);
+
+		return {
+			oeuvreId: titre.oeuvreId,
+			titre: lisible ? titre.titre : null,
+			libelle: lisible ? titre.titre : libelleDeType(typeParOeuvre.get(titre.oeuvreId) ?? null),
+			masque: !lisible
+		};
+	});
 }

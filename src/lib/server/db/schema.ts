@@ -941,3 +941,139 @@ export const graphEdgeSupports = sqliteTable(
 
 export type GraphEdge = typeof graphEdges.$inferSelect;
 export type GraphEdgeSupport = typeof graphEdgeSupports.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Fil d'activité (U8)
+// ---------------------------------------------------------------------------
+
+/**
+ * Les événements que le fil présente (R41), et exactement ceux-là.
+ *
+ * La liste suit mot pour mot l'énumération de R41 — « consignations,
+ * avancements, notes, avis, abandons, ordres créés et suivis » — plutôt qu'une
+ * taxonomie inventée. Ce qui ressemble à un type manquant n'en est pas un : la
+ * reprise d'une œuvre abandonnée (R35) est un **avancement** qui porte l'étagère
+ * `en_cours`, et « a terminé » est un avancement qui porte `termine`. Le type dit
+ * la nature du geste, les colonnes disent le détail.
+ *
+ * `avis` est le seul type dont le nom promet un texte, et c'est le seul dont il
+ * est structurellement impossible d'en servir un : la table n'a pas de colonne
+ * pour le porter. Le fil dit qu'un avis a été écrit, jamais ce qu'il dit — R27
+ * décide de la lecture du texte, sur la page de l'œuvre, et nulle part ailleurs.
+ */
+export const TYPES_EVENEMENT = [
+	'consignation',
+	'avancement',
+	'note',
+	'avis',
+	'abandon',
+	'ordre_cree',
+	'ordre_suivi'
+] as const;
+export type TypeEvenement = (typeof TYPES_EVENEMENT)[number];
+
+/**
+ * Un événement du fil du groupe (R41).
+ *
+ * **Pourquoi une table, alors que `reach_crossings` existe déjà.** Parce que la
+ * file de franchissement n'est pas un journal : elle ne garde qu'une ligne en
+ * attente par couple membre-œuvre, portant le *dernier* sens franchi, et elle
+ * l'écrase à chaque passage — c'est ce qui rend le rejeu du graphe correct et
+ * c'est exactement ce qui la rend inutilisable ici. Un fil a besoin de chaque
+ * transition, dans l'ordre, y compris des deux qui portent sur la même œuvre à
+ * dix minutes d'écart. Les deux tables ont des durées de vie opposées : l'une
+ * s'efface dès qu'elle est traitée, l'autre est la mémoire du groupe.
+ *
+ * **`work_id` et `order_id` sont sans clé étrangère, délibérément.** Une œuvre
+ * peut disparaître du catalogue — fusion de doublons — et un ordre peut être
+ * supprimé par son auteur ; ni l'un ni l'autre ne doit faire échouer une
+ * écriture ni effacer un fait qui a bien eu lieu. La lecture joint à gauche et
+ * rend un événement sans cible plutôt qu'un trou. C'est le même parti pris que
+ * `journal_entries.provenance_order_id`.
+ *
+ * Ce que la table **ne porte pas** : ni titre d'œuvre, ni nom de membre, ni
+ * texte. Le titre est recalculé à la lecture parce qu'une correction (R47) doit
+ * s'y appliquer et parce que R32 le masque selon *le lecteur* ; le nom est
+ * recalculé parce que R38 veut qu'un membre parti cesse d'être nommé, y compris
+ * dans les événements qu'il a produits avant de partir.
+ */
+export const feedEvents = sqliteTable(
+	'feed_events',
+	{
+		id: text('id').primaryKey().$defaultFn(uuid),
+		/** Celui qui a fait le geste. Jamais celui qui lit. */
+		memberId: text('member_id')
+			.notNull()
+			.references(() => members.id),
+		type: text('type', { enum: TYPES_EVENEMENT }).notNull(),
+		workId: text('work_id'),
+		orderId: text('order_id'),
+		/** L'étagère atteinte par le geste, pour les types qui en déplacent une. */
+		shelf: text('shelf', { enum: ETAGERES }),
+		/** R4 — la note posée, pour le seul type `note`. */
+		rating: real('rating'),
+		/** R23 — la position déclarée, en fraction, pour un avancement qui n'a bougé qu'elle. */
+		position: real('position'),
+		createdAt: integer('created_at').notNull().$defaultFn(now)
+	},
+	(table) => [
+		index('feed_events_created_idx').on(table.createdAt),
+		/** R33 — la rétractation désigne un couple membre-œuvre, jamais un événement. */
+		index('feed_events_member_work_idx').on(table.memberId, table.workId),
+		index('feed_events_order_idx').on(table.orderId)
+	]
+);
+
+/**
+ * R43 — l'avis donné à un membre dont une recommandation a été suivie.
+ *
+ * **Le déclencheur est l'atteinte, jamais la consignation.** C'est la lettre de
+ * R43 et c'est aussi la seule version utile : savoir que quelqu'un a posé votre
+ * recommandation sur « à découvrir » n'apprend rien, savoir qu'il l'a lue ouvre
+ * une conversation.
+ *
+ * **`work_id` est l'œuvre pivot, pas nécessairement l'œuvre atteinte**, et c'est
+ * ce qui rend l'agrégation exacte. Quand l'atteinte vient d'une cascade de
+ * recueil, le pivot est le recueil : les quarante numéros incrémentent la même
+ * ligne au lieu d'en créer quarante. Quarante notifications d'un coup rendraient
+ * le mécanisme inutilisable — le membre les balaierait sans les lire, et la
+ * seule qui comptait partirait avec.
+ *
+ * L'index partiel porte l'agrégation : tant qu'une ligne n'est pas lue, elle est
+ * le réceptacle des atteintes suivantes sur le même pivot par le même membre.
+ * Une fois lue, la suivante repart à un — sinon un compteur ancien continuerait
+ * de grossir après que le destinataire l'a vu.
+ *
+ * Une seule sorte de notification existe aujourd'hui, donc pas de colonne de
+ * type : le jour où il y en a deux, c'est une migration et rien d'autre.
+ */
+export const notifications = sqliteTable(
+	'notifications',
+	{
+		id: text('id').primaryKey().$defaultFn(uuid),
+		/** Le destinataire : celui qui avait recommandé. */
+		memberId: text('member_id')
+			.notNull()
+			.references(() => members.id),
+		/** Celui qui a suivi la recommandation et atteint l'œuvre. */
+		actorId: text('actor_id')
+			.notNull()
+			.references(() => members.id),
+		/** Sans clé étrangère, pour la même raison que `feed_events`. */
+		workId: text('work_id').notNull(),
+		/** Combien d'œuvres cette ligne agrège. Un recueil et ses numéros n'en font qu'une. */
+		worksCount: integer('works_count').notNull().default(1),
+		createdAt: integer('created_at').notNull().$defaultFn(now),
+		updatedAt: integer('updated_at').notNull().$defaultFn(now),
+		readAt: integer('read_at')
+	},
+	(table) => [
+		index('notifications_member_idx').on(table.memberId, table.readAt, table.createdAt),
+		uniqueIndex('notifications_unread_unique_idx')
+			.on(table.memberId, table.actorId, table.workId)
+			.where(sql`read_at is null`)
+	]
+);
+
+export type FeedEvent = typeof feedEvents.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;

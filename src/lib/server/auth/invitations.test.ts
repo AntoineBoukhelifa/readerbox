@@ -11,9 +11,24 @@ import { generateToken, hashToken, timingSafeEqual } from './tokens';
 
 const T0 = 1_700_000_000_000;
 
+/**
+ * Émet une invitation dont on attend qu'elle aboutisse.
+ *
+ * R38 fait de l'émission un geste refusable ; la plupart des tests d'ici ne
+ * parlent pas de départ et n'ont pas à porter le déballage.
+ */
+async function emettre(
+	db: ReturnType<typeof createTestDb>,
+	options: { createdBy?: string | null; ttlMs?: number; now?: number } = {}
+) {
+	const resultat = await createInvitation(db, options);
+	if (!resultat.ok) throw new Error(`émission refusée : ${resultat.motif}`);
+	return resultat;
+}
+
 /** Fait entrer un membre par la porte fondatrice, pour disposer d'un émetteur. */
 async function foundingMember(db: ReturnType<typeof createTestDb>, name = 'Antoine') {
-	const { token } = await createInvitation(db, { createdBy: null, now: T0 });
+	const { token } = await emettre(db, { createdBy: null, now: T0 });
 	const result = await redeemInvitation(db, token, name, T0);
 	if (!result.ok) throw new Error('la porte fondatrice devrait toujours s ouvrir');
 	return result.memberId;
@@ -73,7 +88,7 @@ describe('cycle de vie complet', () => {
 		const db = createTestDb();
 		const inviter = await foundingMember(db);
 
-		const { token } = await createInvitation(db, { createdBy: inviter, now: T0 });
+		const { token } = await emettre(db, { createdBy: inviter, now: T0 });
 		const result = await redeemInvitation(db, token, 'Camille', T0 + 1);
 
 		expect(result).toEqual({ ok: true, memberId: expect.any(String) });
@@ -82,7 +97,7 @@ describe('cycle de vie complet', () => {
 	it('un lien déjà consommé est refusé', async () => {
 		const db = createTestDb();
 		const inviter = await foundingMember(db);
-		const { token } = await createInvitation(db, { createdBy: inviter, now: T0 });
+		const { token } = await emettre(db, { createdBy: inviter, now: T0 });
 
 		await redeemInvitation(db, token, 'Camille', T0 + 1);
 		const second = await redeemInvitation(db, token, 'Intrus', T0 + 2);
@@ -93,7 +108,7 @@ describe('cycle de vie complet', () => {
 	it('un lien expiré est refusé', async () => {
 		const db = createTestDb();
 		const inviter = await foundingMember(db);
-		const { token } = await createInvitation(db, { createdBy: inviter, now: T0 });
+		const { token } = await emettre(db, { createdBy: inviter, now: T0 });
 
 		const result = await redeemInvitation(db, token, 'Camille', T0 + INVITATION_TTL_MS + 1);
 
@@ -103,7 +118,7 @@ describe('cycle de vie complet', () => {
 	it('un lien révoqué est refusé, même bien avant son expiration', async () => {
 		const db = createTestDb();
 		const inviter = await foundingMember(db);
-		const { token, invitationId } = await createInvitation(db, { createdBy: inviter, now: T0 });
+		const { token, invitationId } = await emettre(db, { createdBy: inviter, now: T0 });
 
 		expect(await revokeInvitation(db, invitationId, T0 + 1)).toBe('révoquée');
 		const result = await redeemInvitation(db, token, 'Camille', T0 + 2);
@@ -123,7 +138,7 @@ describe('cycle de vie complet', () => {
 	it('une invitation déjà consommée ne se révoque pas', async () => {
 		const db = createTestDb();
 		const inviter = await foundingMember(db);
-		const { token, invitationId } = await createInvitation(db, { createdBy: inviter, now: T0 });
+		const { token, invitationId } = await emettre(db, { createdBy: inviter, now: T0 });
 		await redeemInvitation(db, token, 'Camille', T0 + 1);
 
 		expect(await revokeInvitation(db, invitationId, T0 + 2)).toBe('déjà consommée');
@@ -132,11 +147,11 @@ describe('cycle de vie complet', () => {
 	it("n'importe quel membre peut inviter — il n'y a pas de rôle", async () => {
 		const db = createTestDb();
 		const inviter = await foundingMember(db);
-		const { token } = await createInvitation(db, { createdBy: inviter, now: T0 });
+		const { token } = await emettre(db, { createdBy: inviter, now: T0 });
 		const invited = await redeemInvitation(db, token, 'Camille', T0 + 1);
 		if (!invited.ok) throw new Error('invitation refusée à tort');
 
-		const relayed = await createInvitation(db, { createdBy: invited.memberId, now: T0 + 2 });
+		const relayed = await emettre(db, { createdBy: invited.memberId, now: T0 + 2 });
 		const third = await redeemInvitation(db, relayed.token, 'Léa', T0 + 3);
 
 		expect(third.ok).toBe(true);

@@ -90,8 +90,27 @@ export async function revokeAllSessionsForMember(
 /**
  * Fait quitter le groupe à un membre (R38).
  *
- * Ses avis et ses notes restent — leur anonymisation à l'affichage appartient
- * à U8 — mais son accès est coupé immédiatement et il ne peut plus inviter.
+ * Une seule écriture, et tout le reste en découle — c'est ce qui rend le départ
+ * fiable plutôt que dépendant d'une liste de gestes qu'on pourrait raccourcir :
+ *
+ * - **l'accès s'arrête tout de suite.** Les sessions actives sont révoquées ici,
+ *   et `resolveSession` refuse en plus tout membre marqué parti : deux verrous
+ *   pour que l'oubli de l'un ne rouvre rien ;
+ * - **il ne peut plus inviter.** `createInvitation` lit `leftAt` de son côté, au
+ *   lieu de s'en remettre à l'absence de session ;
+ * - **ses avis et ses notes restent** (R38) et sont anonymisés à l'affichage :
+ *   la page d'œuvre, la page de profil, les ordres et le fil lisent tous `leftAt`
+ *   et cessent de le nommer. Le fil va plus loin et ne charge même pas le nom ;
+ * - **ses ordres restent en place**, marqués sans auteur et toujours suivables
+ *   — `ordreModifiable` refuse seulement qu'on les modifie encore.
+ *
+ * **Ce que cette fonction ne fait pas, et pourquoi.** Elle n'efface ni le nom
+ * d'affichage ni la ligne du membre. La ligne porte l'autorité de ses ordres et
+ * la clé étrangère de ses consignations ; l'effacer ferait disparaître des ordres
+ * que d'autres suivent, ce que R38 refuse explicitement. L'anonymat est donc une
+ * propriété de la **lecture**, appliquée partout, et non une destruction. La
+ * suppression complète de compte, l'export des données, la durée de conservation
+ * et la base légale sont un travail à part, délibérément hors de U8.
  */
 export async function markMemberAsLeft(db: Db, memberId: string, now = Date.now()): Promise<void> {
 	await db.update(members).set({ leftAt: now }).where(eq(members.id, memberId));
