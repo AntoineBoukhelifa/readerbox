@@ -1,117 +1,136 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import Affiche from '$lib/components/Affiche.svelte';
+	import Grille from '$lib/components/Grille.svelte';
+	import Jauge from '$lib/components/Jauge.svelte';
 	import MaskedText from '$lib/components/MaskedText.svelte';
 	import type { PageProps } from './$types';
 
-	let { data }: PageProps = $props();
+	let { data, form }: PageProps = $props();
 
-	/** Les trois étagères de R1, dans l'ordre où on les lit. L'abandon est à part (R2). */
+	/**
+	 * Les rayons du journal, dans l'ordre où on les lit.
+	 *
+	 * L'abandon vient en dernier et n'est pas une quatrième étagère (R2) — mais
+	 * ses affiches portent le liseré d'or comme les terminées, parce qu'une
+	 * œuvre abandonnée **est atteinte** (R3). C'est l'endroit du produit où la
+	 * distinction se voit le mieux : deux rayons différents, le même or.
+	 */
 	const RAYONS = [
-		{ etagere: 'en_cours' as const, titre: 'En cours' },
-		{ etagere: 'termine' as const, titre: 'Terminé' },
-		{ etagere: 'a_decouvrir' as const, titre: 'À découvrir' }
+		{ cle: 'en_cours' as const, titre: 'En cours' },
+		{ cle: 'termine' as const, titre: 'Terminé' },
+		{ cle: 'a_decouvrir' as const, titre: 'À découvrir' },
+		{ cle: 'abandonne' as const, titre: 'Abandonné' }
 	];
 
-	const abandonnees = $derived(data.entrees.filter((entree) => entree.abandonnee));
-
-	function rayon(etagere: (typeof RAYONS)[number]['etagere']) {
-		return data.entrees.filter((entree) => !entree.abandonnee && entree.etagere === etagere);
+	function rayon(cle: (typeof RAYONS)[number]['cle']) {
+		return cle === 'abandonne'
+			? data.entrees.filter((entree) => entree.abandonnee)
+			: data.entrees.filter((entree) => !entree.abandonnee && entree.etagere === cle);
 	}
-
-	/** La note en étoiles, demi-étoiles comprises (R4). */
-	function etoiles(note: number): string {
-		return '★'.repeat(Math.floor(note)) + (note % 1 === 0.5 ? '½' : '');
-	}
-
-	const pourcentage = (position: number) => `${Math.round(position * 100)} %`;
-
-	/** R20 — `null` désigne un ordre dont rien n'est essentiel, pas un zéro. */
-	const avancement = (valeur: number | null) => (valeur === null ? '—' : `${valeur} %`);
 
 	/** R6 — les ordres créés et les ordres suivis sont deux listes, pas une. */
 	const RAYONS_DORDRES = [
 		{ cle: 'crees' as const, titre: 'Ordres écrits' },
 		{ cle: 'suivis' as const, titre: 'Ordres suivis' }
 	];
+
+	const nom = $derived(data.membre.nom ?? 'un membre parti');
+
+	/** Les avis écrits, masqués ou non — R31 les montre en tant qu'objets. */
+	const avis = $derived(data.entrees.filter((entree) => entree.avis !== null));
+
+	const revele = $derived(form !== null && 'revele' in form && form.revele === true);
+
+	const atteintes = $derived(data.entrees.filter((entree) => entree.atteinte).length);
 </script>
 
-<svelte:head
-	><title>Journal de {data.membre.nom ?? 'un membre parti'} — readerbox</title></svelte:head
->
+<svelte:head><title>Journal de {nom} — readerbox</title></svelte:head>
 
-<main class="mx-auto max-w-2xl px-6 py-16">
-	<a href={resolve('/')} class="text-sm text-neutral-500 underline underline-offset-4">Retour</a>
-
-	<h1 class="mt-6 text-2xl font-semibold tracking-tight">
-		Journal de {data.membre.nom ?? 'un membre parti'}
-	</h1>
+<main class="mx-auto w-full max-w-6xl flex-1 px-5 py-10">
+	<p class="enseigne">Journal</p>
+	<h1 class="mt-1 font-display text-3xl leading-none tracking-tight sm:text-4xl">{nom}</h1>
+	<p class="mt-2 text-sm text-encre-tenue">
+		{data.entrees.length} œuvre{data.entrees.length > 1 ? 's' : ''} consignée{data.entrees.length >
+		1
+			? 's'
+			: ''}
+		· <span class="text-or">{atteintes} atteinte{atteintes > 1 ? 's' : ''}</span>
+	</p>
 
 	{#if data.entrees.length === 0}
-		<p class="mt-4 text-sm text-neutral-500">Rien de consigné pour l’instant.</p>
+		<p class="mt-10 text-sm text-encre-tenue">Rien de consigné pour l’instant.</p>
 	{/if}
 
-	{#each RAYONS as { etagere, titre } (etagere)}
-		{@const entrees = rayon(etagere)}
+	{#each RAYONS as { cle, titre } (cle)}
+		{@const entrees = rayon(cle)}
 		{#if entrees.length > 0}
-			<h2 class="mt-10 text-sm font-semibold tracking-tight">{titre}</h2>
-			<ul class="mt-2 divide-y divide-neutral-200">
-				{#each entrees as entree (entree.entreeId)}
-					<li class="py-3">
-						<div class="flex items-baseline justify-between gap-4">
-							<span class="text-sm font-medium">{entree.oeuvre.titre}</span>
-							<span class="text-sm text-neutral-500">
-								{#if entree.note !== null}{etoiles(entree.note)}{/if}
-								{#if etagere === 'en_cours' && entree.position > 0}
-									· {pourcentage(entree.position)}
-								{/if}
-							</span>
-						</div>
-						{#if entree.avis}
-							<!-- La même carte que partout ailleurs : masquée ou non, elle dit
-							     qu'un avis existe et qui l'a écrit (R31). -->
-							<MaskedText
-								oeuvreId={entree.avis.oeuvreId}
-								auteur={data.membre.nom ?? 'Un membre parti'}
-								masque={entree.avis.masque}
-								texte={entree.avis.texte}
+			<h2 class="mt-12 enseigne">{titre} ({entrees.length})</h2>
+			<div class="mt-4">
+				<Grille serree>
+					{#each entrees as entree, rang (entree.entreeId)}
+						<li>
+							<Affiche
+								titre={entree.oeuvre.titre}
+								couvertureUrl={entree.oeuvre.couvertureUrl}
+								href={resolve('/work/[id]', { id: entree.oeuvre.id })}
+								etat={entree.atteinte ? 'atteint' : 'consigne'}
+								note={entree.note}
+								position={entree.position}
+								{rang}
 							/>
-						{/if}
-					</li>
-				{/each}
-			</ul>
+						</li>
+					{/each}
+				</Grille>
+			</div>
 		{/if}
 	{/each}
 
 	{#each RAYONS_DORDRES as { cle, titre } (cle)}
 		{@const liste = data.ordres[cle]}
 		{#if liste.length > 0}
-			<h2 class="mt-10 text-sm font-semibold tracking-tight">{titre}</h2>
-			<ul class="mt-2 divide-y divide-neutral-200">
+			<h2 class="mt-12 enseigne">{titre}</h2>
+			<ul class="mt-3 max-w-2xl border-t border-trait">
 				{#each liste as ordre (ordre.id)}
-					<li class="flex items-baseline justify-between gap-4 py-3">
-						<a
-							href={resolve('/order/[id]', { id: ordre.id })}
-							class="text-sm font-medium underline underline-offset-4">{ordre.titre}</a
-						>
-						<span class="text-sm whitespace-nowrap text-neutral-500">
-							{ordre.nombreDEntrees} entrée{ordre.nombreDEntrees > 1 ? 's' : ''} · {avancement(
-								ordre.pourcentage
-							)}
+					<li
+						class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-trait py-3"
+					>
+						<span class="min-w-0">
+							<a href={resolve('/order/[id]', { id: ordre.id })} class="lien text-sm"
+								>{ordre.titre}</a
+							>
+							<span class="ml-2 text-xs text-encre-tenue">
+								{ordre.nombreDEntrees} entrée{ordre.nombreDEntrees > 1 ? 's' : ''}
+							</span>
 						</span>
+						<span class="w-40 shrink-0"><Jauge pourcentage={ordre.pourcentage} /></span>
 					</li>
 				{/each}
 			</ul>
 		{/if}
 	{/each}
 
-	{#if abandonnees.length > 0}
-		<h2 class="mt-10 text-sm font-semibold tracking-tight">Abandonné</h2>
-		<ul class="mt-2 divide-y divide-neutral-200">
-			{#each abandonnees as entree (entree.entreeId)}
-				<li class="flex items-baseline justify-between gap-4 py-3">
-					<span class="text-sm font-medium">{entree.oeuvre.titre}</span>
-					{#if entree.note !== null}
-						<span class="text-sm text-neutral-500">{etoiles(entree.note)}</span>
+	{#if avis.length > 0}
+		<h2 class="mt-12 enseigne">{data.soiMeme ? 'Ce que tu as écrit' : 'Ce qui a été écrit'}</h2>
+		<ul class="mt-3 max-w-2xl divide-y divide-trait border-t border-trait">
+			{#each avis as entree (entree.entreeId)}
+				<li>
+					<p class="pt-4">
+						<a href={resolve('/work/[id]', { id: entree.oeuvre.id })} class="lien text-sm"
+							>{entree.oeuvre.titre}</a
+						>
+					</p>
+					{#if entree.avis}
+						<!-- La même carte que partout ailleurs : masquée ou non, elle dit
+						     qu'un avis existe et qui l'a écrit (R31). -->
+						<MaskedText
+							oeuvreId={entree.avis.oeuvreId}
+							auteur={nom}
+							note={entree.note}
+							masque={entree.avis.masque}
+							texte={entree.avis.texte}
+							{revele}
+						/>
 					{/if}
 				</li>
 			{/each}

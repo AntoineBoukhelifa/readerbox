@@ -85,42 +85,44 @@
 
 <svelte:head><title>Le fil — readerbox</title></svelte:head>
 
-<main class="mx-auto max-w-2xl px-6 py-16">
-	<a href={resolve('/')} class="text-sm text-neutral-500 underline underline-offset-4">Retour</a>
-
-	<h1 class="mt-6 text-2xl font-semibold tracking-tight">Le fil</h1>
-	<p class="mt-2 text-sm text-neutral-500">
+<!--
+	**Le fil n'a pas d'affiches, et c'est délibéré.** R32 masque le titre d'une
+	œuvre que le lecteur a posée sur « à découvrir » ; une couverture le
+	rendrait aussitôt, en image. La grille d'affiches est partout ailleurs —
+	ici, c'est du texte, et c'est la règle qui l'impose.
+-->
+<main class="mx-auto w-full max-w-2xl flex-1 px-5 py-10">
+	<h1 class="font-display text-2xl leading-none tracking-tight">Le fil</h1>
+	<p class="mt-2 text-sm leading-relaxed text-encre-basse">
 		Ce que le groupe lit en ce moment. Une œuvre que tu as posée sur « à découvrir » apparaît sans
 		son titre — on ne te la gâche pas.
 	</p>
 
 	{#if data.notifications.length > 0}
-		<section class="mt-8 rounded-md border border-neutral-200 p-4">
+		<section class="mt-8 border-l-2 border-or-sourd bg-cimaise px-4 py-3">
 			<div class="flex items-baseline justify-between gap-4">
-				<h2 class="text-sm font-medium">Ce qui te concerne</h2>
+				<h2 class="enseigne">Ce qui te concerne</h2>
 				<form method="POST" action="?/lu">
-					<button class="text-sm text-neutral-500 underline underline-offset-4">
-						Tout marquer lu
-					</button>
+					<button class="lien text-xs text-encre-tenue">Tout marquer lu</button>
 				</form>
 			</div>
 
 			<ul class="mt-3 space-y-2">
 				{#each data.notifications as notification (notification.id)}
-					<li class="text-sm text-neutral-700">
-						{notification.acteur} a suivi ta recommandation et a atteint
+					<li class="text-sm text-encre-basse">
+						<span class="text-encre">{notification.acteur}</span> a suivi ta recommandation et a
+						<span class="text-or">atteint</span>
 						{#if notification.oeuvre.id && !notification.oeuvre.masque}
-							<a
-								href={resolve('/work/[id]', { id: notification.oeuvre.id })}
-								class="underline underline-offset-4">{notification.oeuvre.libelle}</a
+							<a href={resolve('/work/[id]', { id: notification.oeuvre.id })} class="lien"
+								>{notification.oeuvre.libelle}</a
 							>
 						{:else}
 							{notification.oeuvre.libelle}
 						{/if}
 						{#if notification.nombreDOeuvres > 1}
-							<span class="text-neutral-500">· {notification.nombreDOeuvres} œuvres en tout</span>
+							<span class="text-encre-tenue">· {notification.nombreDOeuvres} œuvres en tout</span>
 						{/if}
-						<span class="text-neutral-400">· {jour(notification.quand)}</span>
+						<span class="text-encre-tenue">· {jour(notification.quand)}</span>
 					</li>
 				{/each}
 			</ul>
@@ -128,34 +130,32 @@
 	{/if}
 
 	{#if data.evenements.length === 0}
-		<p class="mt-8 text-sm text-neutral-500">
+		<p class="mt-10 text-sm leading-relaxed text-encre-tenue">
 			Rien encore. Le fil se remplit tout seul dès que quelqu’un consigne, note ou écrit — il n’y a
 			rien à y publier.
 		</p>
 	{:else}
-		<ul class="mt-8 divide-y divide-neutral-200">
+		<ul class="mt-8 border-t border-trait">
 			{#each data.evenements as evenement (evenement.id)}
 				{@const mots = phrase(evenement)}
 				{@const quoi = cible(evenement)}
-				<li class="py-3 text-sm">
-					<p class="text-neutral-800">
-						<span class="font-medium">{evenement.acteur}</span>
+				<li class="border-b border-trait py-3 text-sm">
+					<p class="text-encre-basse">
+						<span class="text-encre">{evenement.acteur}</span>
 						{mots.avant}{#if quoi.vers === null}{quoi.texte}{:else if quoi.vers.quoi === 'ordre'}<a
 								href={resolve('/order/[id]', { id: quoi.vers.id })}
-								class="underline underline-offset-4">{quoi.texte}</a
-							>{:else}<a
-								href={resolve('/work/[id]', { id: quoi.vers.id })}
-								class="underline underline-offset-4">{quoi.texte}</a
+								class="lien text-encre">{quoi.texte}</a
+							>{:else}<a href={resolve('/work/[id]', { id: quoi.vers.id })} class="lien text-encre"
+								>{quoi.texte}</a
 							>{/if}{mots.apres}
-						<span class="text-neutral-400">· {jour(evenement.quand)}</span>
+						<span class="text-encre-tenue">· {jour(evenement.quand)}</span>
 					</p>
 
 					{#if evenement.provenance}
-						<p class="mt-1 text-neutral-500">
+						<p class="mt-1 text-xs text-encre-tenue">
 							{#if evenement.provenance.ordreId}
-								<a
-									href={resolve('/order/[id]', { id: evenement.provenance.ordreId })}
-									class="underline underline-offset-4">{evenement.provenance.libelle}</a
+								<a href={resolve('/order/[id]', { id: evenement.provenance.ordreId })} class="lien"
+									>{evenement.provenance.libelle}</a
 								>
 							{:else}
 								{evenement.provenance.libelle}

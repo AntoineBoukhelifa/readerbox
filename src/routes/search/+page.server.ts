@@ -11,6 +11,7 @@ import {
 	consignerDepuisLeCatalogue,
 	messageDeRefusAmont
 } from '$lib/server/journal/depuisLeCatalogue';
+import { etatsDuMembre } from '$lib/server/journal/entries';
 import { ETAGERES, type Etagere } from '$lib/server/journal/atteinte';
 import { NOMS_DE_SOURCE, type NomDeSource } from '$lib/server/catalog/sources/types';
 import type { Actions, PageServerLoad } from './$types';
@@ -47,6 +48,17 @@ export const load: PageServerLoad = async ({ url, locals, platform }) => {
 					cache: cacheDeRecherche
 				});
 
+	// Où *j'en* suis sur ce que la recherche a rendu. `consignee` dit que
+	// quelqu'un du groupe l'a posée quelque part ; il ne dit rien de moi, et
+	// c'est mon état à moi que la grille doit rendre lisible d'un coup d'œil.
+	const miens = await etatsDuMembre(
+		getDb(d1),
+		locals.member.id,
+		trouvees.resultats
+			.map((resultat) => resultat.oeuvreId)
+			.filter((id): id is string => id !== null)
+	);
+
 	return {
 		requete,
 		// La reconstruction est explicite : ce qui part au navigateur se lit ici.
@@ -64,7 +76,8 @@ export const load: PageServerLoad = async ({ url, locals, platform }) => {
 			numeroDansLaSerie: resultat.numeroDansLaSerie,
 			couvertureUrl: resultat.couvertureUrl,
 			connueDuGroupe: resultat.connueDuGroupe,
-			consignee: resultat.consignee
+			consignee: resultat.consignee,
+			mien: resultat.oeuvreId === null ? null : (miens.get(resultat.oeuvreId) ?? null)
 		})),
 		degradations: trouvees.degradations.map(afficher)
 	};

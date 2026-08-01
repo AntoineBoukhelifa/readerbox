@@ -150,7 +150,7 @@ export interface AvisDeJournal {
 export interface EntreeDeJournal {
 	entreeId: string;
 	membreId: string;
-	oeuvre: { id: string; titre: string; type: TypeOeuvre };
+	oeuvre: { id: string; titre: string; type: TypeOeuvre; couvertureUrl: string | null };
 	etagere: Etagere;
 	abandonnee: boolean;
 	/** Dérivé, jamais lu depuis la base (R3). */
@@ -1072,6 +1072,60 @@ export async function lireConsignation(
 }
 
 /**
+ * Où en est un membre sur un lot d'œuvres — l'état, et rien que l'état.
+ *
+ * C'est ce dont une grille d'affiches a besoin pour se lire d'un coup d'œil :
+ * chaque affiche doit dire si l'œuvre est **atteinte**, seulement **consignée**,
+ * ou sur aucune étagère. Sans ça, une page de recherche montre quarante
+ * couvertures dont on ne sait rien, ce qui est exactement l'interface que le
+ * produit ne veut pas.
+ *
+ * **Une requête pour tout le lot**, pas une par affiche : une recherche en rend
+ * quarante, et quarante allers-retours ne tiennent pas dans les 10 ms d'une
+ * invocation.
+ *
+ * Rien ici ne passe par le masquage et rien n'a à y passer : un membre lit son
+ * propre journal, et R27 ne porte que sur les textes des autres.
+ */
+export interface EtatDuMembre {
+	etagere: Etagere;
+	abandonnee: boolean;
+	atteinte: boolean;
+	/** La position effective de R24, dans [0, 1]. */
+	position: number;
+	note: number | null;
+}
+
+export async function etatsDuMembre(
+	db: Db,
+	membreId: string,
+	oeuvreIds: readonly string[]
+): Promise<Map<string, EtatDuMembre>> {
+	const ids = [...new Set(oeuvreIds)];
+	if (ids.length === 0) return new Map();
+
+	const entrees = await db.query.journalEntries.findMany({
+		where: and(eq(journalEntries.memberId, membreId), inArray(journalEntries.workId, ids))
+	});
+
+	return new Map(
+		entrees.map((entree) => {
+			const etat = etatDe(entree);
+			return [
+				entree.workId,
+				{
+					etagere: entree.shelf,
+					abandonnee: etat.abandonnee,
+					atteinte: estAtteinte(etat),
+					position: positionEffective(etat, entree.declaredPosition),
+					note: entree.rating
+				}
+			];
+		})
+	);
+}
+
+/**
  * R6 — le journal d'un membre : ce qu'il consigne, ses notes, ses avis.
  *
  * Les ordres qu'il suit et ceux qu'il a créés complètent la page ; ils
@@ -1197,7 +1251,10 @@ export async function lecteursDOeuvre(db: Db, oeuvreId: string): Promise<Lecteur
  */
 async function lireEntrees(db: Db, filtre: SQL | undefined): Promise<EntreeDeJournal[]> {
 	const lignes = await db
-		.select({ entree: journalEntries, type: works.type })
+		// La couverture voyage avec le type, dans la jointure qui existe déjà : un
+		// journal se lit en grille d'affiches, et une grille sans image n'est
+		// qu'une liste à puces déguisée.
+		.select({ entree: journalEntries, type: works.type, couvertureUrl: works.coverUrl })
 		.from(journalEntries)
 		.innerJoin(works, eq(works.id, journalEntries.workId))
 		.where(filtre)
@@ -1235,14 +1292,14 @@ async function lireEntrees(db: Db, filtre: SQL | undefined): Promise<EntreeDeJou
 		else recueilsParEntree.set(entree, [contenant]);
 	}
 
-	return lignes.map(({ entree, type }) => {
+	return lignes.map(({ entree, type, couvertureUrl }) => {
 		const etat = etatDe(entree);
 		const ecrit = parEntree.get(entree.id);
 
 		return {
 			entreeId: entree.id,
 			membreId: entree.memberId,
-			oeuvre: { id: entree.workId, titre: titres.get(entree.workId) ?? '', type },
+			oeuvre: { id: entree.workId, titre: titres.get(entree.workId) ?? '', type, couvertureUrl },
 			etagere: entree.shelf,
 			abandonnee: etat.abandonnee,
 			atteinte: estAtteinte(etat),

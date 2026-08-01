@@ -14,39 +14,28 @@
 
 <svelte:head><title>Rejoindre — readerbox</title></svelte:head>
 
-<main class="mx-auto flex min-h-svh max-w-md flex-col justify-center px-6 py-16">
+<main class="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 py-16">
 	{#if data.etat === 'valide'}
-		<h1 class="text-2xl font-semibold tracking-tight">On t’attendait</h1>
-		<p class="mt-2 text-sm text-neutral-500">
+		<h1 class="font-display text-3xl leading-none tracking-tight">On t’attendait</h1>
+		<p class="mt-3 text-sm leading-relaxed text-encre-basse">
 			Choisis le nom sous lequel le groupe te verra. Tu pourras le changer plus tard.
 		</p>
 
-		<form method="POST" class="mt-8 flex flex-col gap-3">
+		<form method="POST" class="mt-8 flex flex-col gap-4">
 			<label class="flex flex-col gap-1.5">
-				<span class="text-sm font-medium">Ton nom</span>
-				<input
-					name="nom"
-					required
-					minlength="2"
-					autocomplete="nickname"
-					class="rounded-md border border-neutral-300 px-3 py-2 outline-none focus:border-neutral-900"
-				/>
+				<span class="enseigne">Ton nom</span>
+				<input name="nom" required minlength="2" autocomplete="nickname" class="champ w-full" />
 			</label>
 
 			{#if form?.message}
-				<p class="text-sm text-red-600">{form.message}</p>
+				<p class="border-l-2 border-braise pl-4 text-sm text-encre-basse">{form.message}</p>
 			{/if}
 
-			<button
-				type="submit"
-				class="mt-2 rounded-md bg-neutral-900 px-4 py-2 font-medium text-white hover:bg-neutral-700"
-			>
-				Rejoindre le groupe
-			</button>
+			<div><button type="submit" class="action">Rejoindre le groupe</button></div>
 		</form>
 	{:else}
-		<h1 class="text-2xl font-semibold tracking-tight">Ce lien ne marche plus</h1>
-		<p class="mt-2 text-sm text-neutral-500">{explications[data.etat] ?? 'Lien invalide.'}</p>
-		<a href={resolve('/')} class="mt-6 text-sm underline underline-offset-4">Retour à l’accueil</a>
+		<h1 class="font-display text-3xl leading-none tracking-tight">Ce lien ne marche plus</h1>
+		<p class="mt-3 text-sm text-encre-basse">{explications[data.etat] ?? 'Lien invalide.'}</p>
+		<p class="mt-6"><a href={resolve('/')} class="lien text-sm">Retour à l’accueil</a></p>
 	{/if}
 </main>

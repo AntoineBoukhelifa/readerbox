@@ -9,6 +9,7 @@ import {
 	consignerDepuisLeCatalogue,
 	messageDeRefusAmont
 } from '$lib/server/journal/depuisLeCatalogue';
+import { etatsDuMembre } from '$lib/server/journal/entries';
 import { ETAGERES, type Etagere } from '$lib/server/journal/atteinte';
 import {
 	NOMS_DE_SOURCE,
@@ -89,6 +90,16 @@ export const load: PageServerLoad = async ({ params, locals, platform }) => {
 		cache: cacheDeRecherche
 	});
 
+	// Mon état sur ce que la facette a rendu : c'est lui que la grille montre,
+	// pas celui du groupe. Une requête pour tout le lot.
+	const miens = await etatsDuMembre(
+		db,
+		locals.member.id,
+		trouvees.resultats
+			.map((resultat) => resultat.oeuvreId)
+			.filter((id): id is string => id !== null)
+	);
+
 	return {
 		axe: params.axe,
 		libelle: LIBELLES[params.axe],
@@ -111,7 +122,8 @@ export const load: PageServerLoad = async ({ params, locals, platform }) => {
 			numeroDansLaSerie: resultat.numeroDansLaSerie,
 			couvertureUrl: resultat.couvertureUrl,
 			connueDuGroupe: resultat.connueDuGroupe,
-			consignee: resultat.consignee
+			consignee: resultat.consignee,
+			mien: resultat.oeuvreId === null ? null : (miens.get(resultat.oeuvreId) ?? null)
 		})),
 		degradations: trouvees.degradations.map(messageDe)
 	};

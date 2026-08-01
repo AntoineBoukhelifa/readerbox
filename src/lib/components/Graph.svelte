@@ -67,47 +67,75 @@
 	}
 
 	/**
-	 * La palette est celle du reste du produit — les gris de Tailwind — et les
-	 * trois dimensions se distinguent par la **forme** autant que par la teinte :
-	 * un graphe qui ne se lirait qu'en couleur ne se lirait pas du tout pour qui
-	 * les distingue mal.
+	 * La palette est celle de la salle obscure, et elle y obéit à la même règle
+	 * qu'ailleurs : **l'or ne désigne que l'état.** Ici, l'état est le nœud
+	 * ouvert — celui que le membre est en train de regarder. Les trois
+	 * dimensions, elles, se distinguent par la **forme** autant que par la
+	 * clarté : un graphe qui ne se lirait qu'en couleur ne se lirait pas du tout
+	 * pour qui les distingue mal.
+	 *
+	 * Les valeurs sont écrites en dur plutôt que lues du thème : Cytoscape
+	 * dessine dans un canevas, où les variables CSS n'existent pas. Elles
+	 * reprennent `--color-encre`, `--color-encre-basse`, `--color-trait` et
+	 * `--color-or` de `layout.css`, et doivent bouger avec elles.
 	 */
+	const SALLE = '#2a2621';
+	const ENCRE = '#f0e9e0';
+	const ENCRE_BASSE = '#b5aca0';
+	const TRAIT = '#4b463f';
+	const OR = '#e0a63a';
+
 	const STYLE: StylesheetJson = [
 		{
 			selector: 'node',
 			style: {
-				'background-color': '#a3a3a3',
+				'background-color': ENCRE_BASSE,
 				width: 'data(taille)',
 				height: 'data(taille)',
 				label: 'data(nom)',
 				'font-size': '10px',
-				'font-family': 'ui-sans-serif, system-ui, sans-serif',
-				color: '#404040',
+				'font-family': "'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif",
+				color: ENCRE_BASSE,
 				'text-valign': 'bottom',
 				'text-margin-y': 3,
+				// Un liseré de fond derrière le texte : un graphe dense empile les
+				// libellés sur les traits, et un nom illisible ne désigne rien.
+				'text-outline-color': SALLE,
+				'text-outline-width': 2,
 				'min-zoomed-font-size': 8
 			}
 		},
-		{ selector: 'node[dimension = "personnage"]', style: { 'background-color': '#525252' } },
+		{ selector: 'node[dimension = "personnage"]', style: { 'background-color': ENCRE } },
 		{
 			selector: 'node[dimension = "serie"]',
-			style: { 'background-color': '#a3a3a3', shape: 'round-rectangle' }
+			style: { 'background-color': ENCRE_BASSE, shape: 'round-rectangle' }
 		},
 		{
 			selector: 'node[dimension = "event"]',
-			style: { 'background-color': '#0a0a0a', shape: 'diamond' }
+			style: {
+				'background-color': TRAIT,
+				'border-width': 1,
+				'border-color': ENCRE,
+				shape: 'diamond'
+			}
 		},
 		{
 			selector: 'node.ouvert',
-			style: { 'border-width': 3, 'border-color': '#0a0a0a', 'font-weight': 'bold' }
+			style: {
+				'background-color': OR,
+				'border-width': 3,
+				'border-color': OR,
+				color: OR,
+				'font-weight': 'bold'
+			}
 		},
 		{
 			selector: 'edge',
 			style: {
 				width: 'data(epaisseur)',
-				'line-color': '#d4d4d4',
+				'line-color': TRAIT,
 				'curve-style': 'haystack',
-				opacity: 0.8
+				opacity: 0.9
 			}
 		}
 	];
@@ -175,13 +203,13 @@
 
 <div
 	bind:this={conteneur}
-	class="h-[28rem] w-full rounded-md border border-neutral-300 bg-white"
+	class="h-[32rem] w-full border border-trait bg-cimaise"
 	role="application"
 	aria-label="Le graphe de ce que tu as atteint"
 ></div>
 
 {#if graphe.noeuds.length > 0}
-	<p class="mt-2 text-xs text-neutral-400">
+	<p class="mt-2 text-xs text-encre-tenue">
 		{graphe.noeuds.length} nœud{graphe.noeuds.length > 1 ? 's' : ''} · {graphe.aretes.length} lien{graphe
 			.aretes.length > 1
 			? 's'

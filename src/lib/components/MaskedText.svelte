@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Etoiles from './Etoiles.svelte';
+
 	/**
 	 * Un avis, masqué ou non — et c'est la **même carte** dans les deux cas.
 	 *
@@ -18,6 +20,13 @@
 	 * L'avertissement est une étape de `<details>` plutôt qu'un état JavaScript :
 	 * il fonctionne sans script, et le geste reste en deux temps — on ne se gâche
 	 * pas une œuvre par un clic mal placé.
+	 *
+	 * **Un avis masqué doit se lire comme délibéré, pas comme cassé.** D'où le
+	 * traitement : le bloc de substitution est une surface pleine, en élévation,
+	 * marquée d'un liseré d'or sourd et d'une phrase composée dans la display du
+	 * produit. Il occupe la place qu'occuperait le texte, il ne s'en excuse pas,
+	 * et il ne ressemble à aucun message d'erreur — c'est une mécanique dont le
+	 * produit est fier.
 	 */
 	interface Props {
 		/** L'œuvre concernée, que le formulaire de révélation reporte. */
@@ -31,6 +40,12 @@
 		texte: string | null;
 		/** L'action de révélation de la surface courante. */
 		action?: string;
+		/**
+		 * Le texte vient-il d'être ouvert par une révélation ? Mouvement 3 : il se
+		 * découvre alors d'un coup, du haut vers le bas, pour que le geste ait le
+		 * poids de ce qu'il coûte — on ne revient pas en arrière.
+		 */
+		revele?: boolean;
 	}
 
 	let {
@@ -40,52 +55,68 @@
 		ecritLe = null,
 		masque,
 		texte,
-		action = '?/reveler'
+		action = '?/reveler',
+		revele = false
 	}: Props = $props();
-
-	/** La note en étoiles, demi-étoiles comprises (R4). */
-	function etoiles(valeur: number): string {
-		return '★'.repeat(Math.floor(valeur)) + (valeur % 1 === 0.5 ? '½' : '');
-	}
 
 	const dateCourte = (ms: number) =>
 		new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 </script>
 
-<article class="py-3">
-	<div class="flex items-baseline justify-between gap-4">
-		<span class="text-sm font-medium">{auteur}</span>
-		<span class="text-sm text-neutral-500">
-			{#if note !== null}{etoiles(note)}{/if}
-			{#if ecritLe !== null}
-				<span class="text-neutral-400">· {dateCourte(ecritLe)}</span>
-			{/if}
-		</span>
+<article class="py-4">
+	<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+		<h3 class="text-sm tracking-wide text-encre">{auteur}</h3>
+		<p class="flex items-baseline gap-2 text-xs text-encre-tenue">
+			{#if note !== null}<Etoiles valeur={note} />{/if}
+			{#if ecritLe !== null}<span>{dateCourte(ecritLe)}</span>{/if}
+		</p>
 	</div>
 
 	{#if !masque && texte !== null}
-		<p class="mt-1 text-sm whitespace-pre-line text-neutral-700">{texte}</p>
+		<p
+			class="mt-2 text-sm leading-relaxed whitespace-pre-line text-encre-basse
+				{revele ? 'animate-revelation' : ''}"
+		>
+			{texte}
+		</p>
 	{:else}
-		<p class="mt-1 text-sm text-neutral-400 italic">Avis masqué — termine l’œuvre pour le lire.</p>
+		<div class="mt-2 border-l-2 border-or-sourd bg-cimaise px-4 py-3">
+			<p class="font-display text-base leading-snug text-encre-basse">
+				Il y a un texte ici. Il t’attend de l’autre côté de cette œuvre.
+			</p>
+			<p class="mt-1 text-xs text-encre-tenue">
+				Un avis s’ouvre quand tu atteins l’œuvre — terminée, ou abandonnée.
+			</p>
 
-		<details class="mt-1">
-			<summary
-				class="inline-block cursor-pointer list-none text-sm text-neutral-500 underline underline-offset-4"
-			>
-				Le lire quand même
-			</summary>
-			<div class="mt-2 rounded-md border border-neutral-300 bg-neutral-50 p-3">
-				<p class="text-sm text-neutral-700">
-					Ce texte a été écrit par quelqu’un qui est allé plus loin que toi. Il peut te gâcher la
-					suite, et une fois lu, on ne revient pas en arrière.
-				</p>
-				<form method="POST" {action} class="mt-2">
-					<input type="hidden" name="oeuvre" value={oeuvreId} />
-					<button class="text-sm font-medium text-red-600 underline underline-offset-4">
-						Révéler quand même
-					</button>
-				</form>
-			</div>
-		</details>
+			<details class="avertissement mt-3">
+				<summary class="action-sourde cursor-pointer list-none">Le lire quand même</summary>
+
+				<div class="mt-3 border-t border-trait pt-3">
+					<p class="text-sm leading-relaxed text-encre-basse">
+						Ce texte a été écrit par quelqu’un qui est allé plus loin que toi. Il peut te gâcher la
+						suite, et une fois lu, on ne revient pas en arrière.
+					</p>
+					<form method="POST" {action} class="mt-3">
+						<input type="hidden" name="oeuvre" value={oeuvreId} />
+						<button class="risque text-sm">Révéler quand même</button>
+					</form>
+				</div>
+			</details>
+		</div>
 	{/if}
 </article>
+
+<style>
+	/*
+	 * L'avertissement s'ouvre d'un coup net. Le `<details>` fait tout le
+	 * travail ; l'animation ne porte que le contenu déjà ouvert, ce qui la rend
+	 * possible sans script et sans hauteur mesurée.
+	 */
+	.avertissement[open] > div {
+		animation: var(--animate-revelation);
+	}
+
+	.avertissement > summary::-webkit-details-marker {
+		display: none;
+	}
+</style>

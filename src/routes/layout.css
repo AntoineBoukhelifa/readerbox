@@ -1,1 +1,287 @@
 @import 'tailwindcss';
+
+/*
+ * Les deux familles, auto-hébergées via Fontsource.
+ *
+ * Rien ne part chercher une police en ligne : le projet tient sur des outils
+ * gratuits et n'ajoute pas une dépendance à un tiers pour afficher un titre.
+ * Les deux paquets sont variables — un seul fichier par famille couvre toutes
+ * les graisses, ce qui coûte moins qu'un jeu de fichiers statiques.
+ */
+@import '@fontsource-variable/oswald';
+@import '@fontsource-variable/ibm-plex-sans';
+
+/*
+ * ---------------------------------------------------------------------------
+ * La salle obscure
+ * ---------------------------------------------------------------------------
+ *
+ * Le principe tient en une phrase : **les couvertures sont les seules choses
+ * saturées de l'écran.** Soixante ans d'affiches et de couvertures aux styles
+ * incompatibles — un comic de 1975, une affiche de film de 2019 — ne
+ * s'accordent que sur du noir. Tout le reste s'efface pour qu'elles portent.
+ *
+ * Trois conséquences, tenues partout :
+ *
+ * 1. **Le fond est un noir chaud, jamais un noir pur.** Le noir absolu fait
+ *    ressortir le bord des images en découpe et fatigue à la lecture longue ;
+ *    une pointe de chaud accorde le fond au papier jauni des scans anciens.
+ * 2. **L'or ne désigne que l'état.** Atteint, progression, révélation. Il
+ *    n'orne rien : s'il servait aussi à faire joli, il ne dirait plus rien, et
+ *    la distinction consigné/atteint — qui est le cœur du produit — se
+ *    perdrait dans la décoration.
+ * 3. **Presque pas de chrome.** Pas de carte sauf quand la carte *est*
+ *    l'interaction, pas de bordure décorative, pas d'ombre portée molle. Un
+ *    trait d'un pixel suffit à séparer deux choses.
+ */
+@theme {
+	/* Le fond. Un noir chaud, et une seule élévation au-dessus. */
+	--color-salle: oklch(0.16 0.008 60);
+	--color-cimaise: oklch(0.21 0.009 62);
+	/* Le trait : séparer, jamais encadrer. */
+	--color-trait: oklch(0.31 0.008 62);
+
+	/*
+	 * L'encre, en trois niveaux. Les contrastes sur `--color-salle` sont
+	 * mesurés : 16:1, 7,3:1 et 4,9:1 — le plancher AA (4,5:1) est tenu même
+	 * par le niveau le plus bas, qui ne sert qu'à des mentions courtes.
+	 */
+	--color-encre: oklch(0.94 0.012 78);
+	--color-encre-basse: oklch(0.7 0.012 72);
+	--color-encre-tenue: oklch(0.6 0.01 70);
+
+	/* L'accent, réservé à l'état. */
+	--color-or: oklch(0.78 0.15 75);
+	--color-or-sourd: oklch(0.42 0.07 75);
+
+	/* Le retrait et la destruction, très parcimonieux. */
+	--color-braise: oklch(0.62 0.15 25);
+
+	--font-display: 'Oswald Variable', 'Archivo Narrow', ui-sans-serif, system-ui, sans-serif;
+	--font-sans: 'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif;
+
+	/*
+	 * Une seule courbe, franche : elle démarre vite et s'arrête net. Les
+	 * courbes molles font flotter, et une interface qui flotte donne
+	 * l'impression d'attendre.
+	 */
+	--ease-franche: cubic-bezier(0.2, 0, 0, 1);
+
+	/* Mouvement 1 — l'apparition décalée des affiches à l'entrée d'une grille. */
+	--animate-apparition: apparition 420ms var(--ease-franche) both;
+	/* Mouvement 3 — la révélation d'un avis masqué, franche et sans retour. */
+	--animate-revelation: revelation 320ms var(--ease-franche) both;
+
+	@keyframes apparition {
+		from {
+			opacity: 0;
+			transform: translateY(12px);
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+
+	@keyframes revelation {
+		from {
+			opacity: 0;
+			clip-path: inset(0 0 100% 0);
+		}
+		to {
+			opacity: 1;
+			clip-path: inset(0 0 0 0);
+		}
+	}
+}
+
+@layer base {
+	html {
+		color-scheme: dark;
+	}
+
+	body {
+		background-color: var(--color-salle);
+		color: var(--color-encre);
+		font-family: var(--font-sans);
+		-webkit-font-smoothing: antialiased;
+	}
+
+	/* La display condensée porte tous les titres, et rien d'autre. */
+	h1,
+	h2,
+	h3 {
+		font-family: var(--font-display);
+		font-weight: 500;
+		letter-spacing: 0.005em;
+	}
+
+	/*
+	 * Le focus est visible partout, et c'est l'or qui le porte : il désigne
+	 * bien un état — celui du clavier — donc il ne déroge pas à la règle.
+	 */
+	:focus-visible {
+		outline: 2px solid var(--color-or);
+		outline-offset: 2px;
+	}
+
+	::selection {
+		background-color: var(--color-or);
+		color: var(--color-salle);
+	}
+
+	/* Le champ de saisie est sombre lui aussi : un bloc blanc trouerait la salle. */
+	input,
+	textarea,
+	select {
+		color-scheme: dark;
+	}
+
+	/*
+	 * La case cochée est en encre, pas en or : cocher « Personnages » choisit ce
+	 * qu'on regarde, ce n'est pas un état de lecture. L'or resterait faux ici.
+	 */
+	input[type='checkbox'] {
+		accent-color: var(--color-encre);
+	}
+
+	/* Qui a demandé moins d'animation n'en reçoit aucune. */
+	@media (prefers-reduced-motion: reduce) {
+		*,
+		*::before,
+		*::after {
+			animation-duration: 0.01ms !important;
+			animation-delay: 0ms !important;
+			transition-duration: 0.01ms !important;
+		}
+	}
+}
+
+/*
+ * ---------------------------------------------------------------------------
+ * Les quelques formes qui reviennent partout
+ * ---------------------------------------------------------------------------
+ *
+ * Elles sont ici plutôt que recopiées sur douze pages, non pour économiser des
+ * caractères mais parce qu'un bouton d'action qui diverge d'une page à l'autre
+ * cesse d'être reconnaissable. Il n'y en a que six.
+ */
+@layer components {
+	/*
+	 * L'action principale d'une surface. Il n'y en a qu'une par écran.
+	 *
+	 * **Elle n'est pas en or**, et c'est la règle qui l'exige : l'or ne dit que
+	 * l'état — atteint, progression, révélation. Un bouton « Chercher » peint en
+	 * or serait de l'ornement, et le jour où l'or orne, il ne signale plus rien.
+	 * Le contraste vient donc de l'encre : un trait franc, plein au survol.
+	 */
+	.action {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		border: 1px solid var(--color-encre);
+		background-color: transparent;
+		color: var(--color-encre);
+		padding: 0.5rem 1rem;
+		font-family: var(--font-display);
+		font-size: 0.875rem;
+		font-weight: 500;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		transition:
+			background-color 120ms var(--ease-franche),
+			color 120ms var(--ease-franche);
+	}
+
+	.action:hover {
+		background-color: var(--color-encre);
+		color: var(--color-salle);
+	}
+
+	/* L'action ordinaire : un trait, du texte, rien de plus. */
+	.action-sourde {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		border: 1px solid var(--color-trait);
+		color: var(--color-encre);
+		padding: 0.4rem 0.8rem;
+		font-size: 0.8125rem;
+		transition:
+			border-color 120ms var(--ease-franche),
+			color 120ms var(--ease-franche);
+	}
+
+	.action-sourde:hover {
+		border-color: var(--color-encre-basse);
+	}
+
+	.action-sourde:disabled {
+		opacity: 0.35;
+	}
+
+	/* L'état retenu d'un jeu de boutons : c'est l'or qui le porte. */
+	.action-sourde[data-retenu='oui'] {
+		border-color: var(--color-or);
+		color: var(--color-or);
+	}
+
+	/* Le retrait et la destruction. */
+	.risque {
+		color: var(--color-braise);
+		text-decoration: underline;
+		text-underline-offset: 4px;
+	}
+
+	.lien {
+		text-decoration: underline;
+		text-decoration-color: var(--color-trait);
+		text-underline-offset: 4px;
+		transition: text-decoration-color 120ms var(--ease-franche);
+	}
+
+	.lien:hover {
+		text-decoration-color: var(--color-or);
+	}
+
+	.champ {
+		border: 1px solid var(--color-trait);
+		background-color: transparent;
+		color: var(--color-encre);
+		padding: 0.5rem 0.75rem;
+		font-size: 0.875rem;
+	}
+
+	.champ::placeholder {
+		color: var(--color-encre-tenue);
+	}
+
+	.champ:focus {
+		border-color: var(--color-or);
+	}
+}
+
+/*
+ * Le titre de section : petit, condensé, espacé. Il annonce sans occuper.
+ */
+@utility enseigne {
+	font-family: var(--font-display);
+	font-size: 0.8125rem;
+	font-weight: 500;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--color-encre-basse);
+}
+
+/*
+ * L'apparition décalée d'une grille (mouvement 1).
+ *
+ * Le décalage vient d'une variable posée par la grille sur chaque cellule, et
+ * il est **plafonné par la grille elle-même** : au-delà d'une douzaine
+ * d'affiches, attendre son tour pendant une seconde et demie n'est plus une
+ * entrée en scène, c'est une page lente.
+ */
+@utility apparait {
+	animation: var(--animate-apparition);
+	animation-delay: calc(var(--rang, 0) * 35ms);
+}

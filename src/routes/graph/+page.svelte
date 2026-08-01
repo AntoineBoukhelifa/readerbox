@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import Affiche from '$lib/components/Affiche.svelte';
+	import Grille from '$lib/components/Grille.svelte';
 	import Graph from '$lib/components/Graph.svelte';
 	import {
 		DIMENSIONS,
@@ -80,6 +82,7 @@
 		else void goto(resolve(`/graph?${requete(voulues, noeudOuvert)}`));
 	}
 
+	/** Les deux étagères qu'on pose sans quitter le graphe. L'abandon est ailleurs (R2). */
 	const LIBELLES_ETAGERE = [
 		{ valeur: 'a_decouvrir', libelle: 'À découvrir' },
 		{ valeur: 'en_cours', libelle: 'En cours' }
@@ -88,13 +91,13 @@
 
 <svelte:head><title>Ton graphe — readerbox</title></svelte:head>
 
-<main class="mx-auto max-w-4xl px-6 py-16">
-	<a href={resolve('/')} class="text-sm text-neutral-500 underline underline-offset-4">Retour</a>
-
-	<h1 class="mt-6 text-2xl font-semibold tracking-tight">Ton graphe</h1>
-	<p class="mt-2 text-sm text-neutral-500">
+<main class="mx-auto w-full max-w-6xl flex-1 px-5 py-10">
+	<h1 class="font-display text-2xl leading-none tracking-tight">Ton graphe</h1>
+	<p class="mt-2 max-w-2xl text-sm leading-relaxed text-encre-basse">
 		Ce que tes lectures ont fait apparaître. Un nœud est un personnage, une série ou un event ; deux
-		nœuds se touchent quand une œuvre que tu as atteinte les crédite tous les deux.
+		nœuds se touchent quand une œuvre que tu as <strong class="font-normal text-or">atteinte</strong
+		>
+		les crédite tous les deux.
 	</p>
 
 	{#if data.volume.noeuds === 0}
@@ -102,22 +105,22 @@
 		<!-- L'état d'accueil : l'écran qu'un nouveau membre verra le plus       -->
 		<!-- longtemps, et celui où le produit doit se faire comprendre.         -->
 		<!-- ------------------------------------------------------------------ -->
-		<section class="mt-10 rounded-md border border-neutral-300 bg-neutral-50 p-6">
-			<h2 class="text-sm font-semibold tracking-tight">Il est vide, et c’est normal</h2>
-			<p class="mt-2 text-sm text-neutral-700">
-				Le graphe se construit à mesure de tes lectures : chaque œuvre que tu <strong
-					>atteins</strong
-				>
+		<section class="mt-10 max-w-2xl border-l-2 border-or-sourd py-2 pl-5">
+			<h2 class="font-display text-xl leading-none tracking-wide uppercase">
+				Il est vide, et c’est normal
+			</h2>
+			<p class="mt-3 text-sm leading-relaxed text-encre-basse">
+				Le graphe se construit à mesure de tes lectures : chaque œuvre que tu
+				<strong class="font-normal text-or">atteins</strong>
 				— terminée ou abandonnée — y fait apparaître ses personnages, sa série et son event. Ce que tu
 				n’as pas atteint reste invisible, ici comme partout ailleurs : c’est ce qui fait qu’on peut te
 				le montrer sans rien te gâcher.
 			</p>
-			<p class="mt-3 text-sm text-neutral-700">
+			<p class="mt-3 text-sm leading-relaxed text-encre-basse">
 				{#if data.suggestion}
 					Pour l’amorcer, suis un ordre du groupe —
-					<a
-						href={resolve('/order/[id]', { id: data.suggestion.id })}
-						class="font-medium underline underline-offset-4">{data.suggestion.titre}</a
+					<a href={resolve('/order/[id]', { id: data.suggestion.id })} class="lien"
+						>{data.suggestion.titre}</a
 					>
 					est le dernier qui a bougé — et consigne ce que tu lis au fur et à mesure.
 				{:else}
@@ -125,13 +128,8 @@
 					trois œuvres suffisent à faire apparaître un premier lien.
 				{/if}
 			</p>
-			<p class="mt-4">
-				<a
-					href={resolve('/orders')}
-					class="inline-block rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
-				>
-					Les ordres du groupe
-				</a>
+			<p class="mt-5">
+				<a href={resolve('/orders')} class="action">Les ordres du groupe</a>
 			</p>
 		</section>
 	{:else}
@@ -139,12 +137,12 @@
 		<!-- R49 — le filtrage par dimension, plafonné à deux.                   -->
 		<!-- ------------------------------------------------------------------ -->
 		<section class="mt-8">
-			<div class="flex flex-wrap items-center gap-4">
+			<div class="flex flex-wrap items-center gap-5">
 				{#each DIMENSIONS as dimension (dimension)}
 					<label
 						class="flex items-center gap-2 text-sm {verrouillee(dimension)
-							? 'text-neutral-400'
-							: 'text-neutral-700'}"
+							? 'text-encre-tenue'
+							: 'text-encre'}"
 					>
 						<input
 							type="checkbox"
@@ -155,40 +153,40 @@
 						{LIBELLES_DIMENSION[dimension]}
 					</label>
 				{/each}
-				<span class="text-xs text-neutral-400">
+				<span class="text-xs text-encre-tenue">
 					Deux dimensions au plus : au-delà, plus rien ne se lit.
 				</span>
 			</div>
 
 			{#if data.message}
-				<p class="mt-3 rounded-md border border-neutral-300 bg-neutral-50 p-3 text-sm">
+				<p class="mt-4 border-l-2 border-or-sourd bg-cimaise px-4 py-3 text-sm text-encre-basse">
 					{data.message}
 				</p>
 			{/if}
 
 			{#if !data.filtrageClient}
-				<p class="mt-3 text-xs text-neutral-400">
+				<p class="mt-3 text-xs text-encre-tenue">
 					Ton graphe dépasse ce qu’on envoie d’un bloc : le filtrage se fait sur le serveur, donc
 					changer de dimension recharge la page.
 				</p>
 			{/if}
 
 			{#if affiche.tronque}
-				<p class="mt-3 text-xs text-neutral-400">
+				<p class="mt-3 text-xs text-encre-tenue">
 					Une œuvre que tu as atteinte crédite trop de monde pour que ses liens soient tous dessinés
 					: ses nœuds sont là, ses traits manquent.
 				</p>
 			{/if}
 		</section>
 
-		<section class="mt-4">
+		<section class="mt-5">
 			{#if affiche.noeuds.length === 0}
 				<!--
 					Ton graphe n'est pas vide, mais rien n'y répond aux cases cochées : le
 					dire, plutôt que de rendre le même écran qu'un graphe vide, qui ferait
 					croire que rien n'a été lu.
 				-->
-				<p class="rounded-md border border-neutral-300 bg-neutral-50 p-6 text-sm text-neutral-700">
+				<p class="border-l-2 border-trait bg-cimaise px-4 py-4 text-sm text-encre-basse">
 					Tes lectures n’ont encore rien fait apparaître de ce côté-là ({dimensionsCochees}). Essaie
 					une autre case : ton graphe compte {data.volume.noeuds} nœud{data.volume.noeuds > 1
 						? 's'
@@ -201,7 +199,7 @@
 	{/if}
 
 	{#if form?.message}
-		<p class="mt-6 rounded-md border border-neutral-300 bg-neutral-50 p-3 text-sm text-neutral-700">
+		<p class="mt-6 border-l-2 border-trait bg-cimaise px-4 py-3 text-sm text-encre-basse">
 			{form.message}
 		</p>
 	{/if}
@@ -211,51 +209,53 @@
 	<!-- -------------------------------------------------------------------- -->
 	{#if data.noeud}
 		{@const noeud = data.noeud}
-		<section class="mt-10 rounded-md border border-neutral-300 p-6">
-			<div class="flex items-baseline justify-between gap-4">
-				<h2 class="text-lg font-semibold tracking-tight">{noeud.nom}</h2>
-				<a
-					href={resolve(`/graph?${requete(actives, null)}`)}
-					class="text-sm text-neutral-500 underline underline-offset-4">Fermer</a
+		<section class="mt-10 border-t border-trait pt-6">
+			<div class="flex flex-wrap items-baseline justify-between gap-4">
+				<div>
+					<p class="enseigne">{LIBELLES_DIMENSION[noeud.dimension]}</p>
+					<h2 class="mt-1 font-display text-3xl leading-none tracking-tight">{noeud.nom}</h2>
+					<p class="mt-1 text-sm text-or">
+						{noeud.oeuvres.length} œuvre{noeud.oeuvres.length > 1 ? 's' : ''} atteinte{noeud.oeuvres
+							.length > 1
+							? 's'
+							: ''}
+					</p>
+				</div>
+				<a href={resolve(`/graph?${requete(actives, null)}`)} class="lien text-sm text-encre-tenue"
+					>Fermer</a
 				>
 			</div>
-			<p class="mt-1 text-sm text-neutral-500">
-				{LIBELLES_DIMENSION[noeud.dimension]} · {noeud.oeuvres.length} œuvre{noeud.oeuvres.length >
-				1
-					? 's'
-					: ''} atteinte{noeud.oeuvres.length > 1 ? 's' : ''}
-			</p>
 
-			<h3 class="mt-6 text-sm font-semibold tracking-tight">Ce qui l’a fait apparaître</h3>
-			<ul class="mt-2 divide-y divide-neutral-200">
-				{#each noeud.oeuvres as oeuvre (oeuvre.id)}
-					<li class="py-2 text-sm">
-						<a href={resolve('/work/[id]', { id: oeuvre.id })} class="underline underline-offset-4"
-							>{oeuvre.titre}</a
-						>
-						<span class="text-neutral-500">
-							· {oeuvre.type}{#if oeuvre.dateDeParution}
-								· {oeuvre.dateDeParution}{/if}
-						</span>
-					</li>
-				{/each}
-			</ul>
+			<h3 class="mt-8 enseigne">Ce qui l’a fait apparaître</h3>
+			<div class="mt-4">
+				<Grille serree>
+					{#each noeud.oeuvres as oeuvre, rang (oeuvre.id)}
+						<li>
+							<Affiche
+								titre={oeuvre.titre}
+								couvertureUrl={oeuvre.couvertureUrl}
+								href={resolve('/work/[id]', { id: oeuvre.id })}
+								situation={[oeuvre.type, oeuvre.dateDeParution].filter(Boolean).join(' · ')}
+								etat="atteint"
+								{rang}
+							/>
+						</li>
+					{/each}
+				</Grille>
+			</div>
 
-			<h3 class="mt-6 text-sm font-semibold tracking-tight">Les ordres qui les couvrent</h3>
+			<h3 class="mt-10 enseigne">Les ordres qui les couvrent</h3>
 			{#if noeud.ordres.length === 0}
-				<p class="mt-2 text-sm text-neutral-500">
+				<p class="mt-3 max-w-xl text-sm leading-relaxed text-encre-tenue">
 					Aucun ordre du groupe ne passe par ces œuvres. C’est peut-être à toi d’en écrire un.
 				</p>
 			{:else}
-				<ul class="mt-2 divide-y divide-neutral-200">
+				<ul class="mt-3 max-w-2xl border-t border-trait">
 					{#each noeud.ordres as ordre (ordre.id)}
-						<li class="py-2 text-sm">
-							<a
-								href={resolve('/order/[id]', { id: ordre.id })}
-								class="underline underline-offset-4">{ordre.titre}</a
-							>
-							<span class="text-neutral-500">
-								· par {ordre.auteur ?? 'un membre parti'} · {ordre.couvertes} de ces œuvres sur {ordre.nombreDEntrees}
+						<li class="border-b border-trait py-2 text-sm">
+							<a href={resolve('/order/[id]', { id: ordre.id })} class="lien">{ordre.titre}</a>
+							<span class="block text-xs text-encre-tenue">
+								par {ordre.auteur ?? 'un membre parti'} · {ordre.couvertes} de ces œuvres sur {ordre.nombreDEntrees}
 								entrées
 							</span>
 						</li>
@@ -264,48 +264,50 @@
 			{/if}
 
 			<!-- Le volet sans lequel le graphe ne serait qu'un rétroviseur. -->
-			<h3 class="mt-6 text-sm font-semibold tracking-tight">Ce que tu n’as pas encore atteint</h3>
+			<h3 class="mt-10 enseigne">Ce que tu n’as pas encore atteint</h3>
 			{#if noeud.apparitions.length === 0}
-				<p class="mt-2 text-sm text-neutral-500">
+				<p class="mt-3 max-w-xl text-sm leading-relaxed text-encre-tenue">
 					Le catalogue ne connaît rien d’autre à ce nom. Il ne contient que ce qui a déjà été ingéré
 					: d’autres apparitions existent sûrement et n’y sont pas encore.
 				</p>
 			{:else}
-				<ul class="mt-2 divide-y divide-neutral-200">
-					{#each noeud.apparitions as apparition (apparition.id)}
-						<li class="flex flex-wrap items-baseline justify-between gap-2 py-2 text-sm">
-							<span>
-								<a
+				<div class="mt-4">
+					<Grille>
+						{#each noeud.apparitions as apparition, rang (apparition.id)}
+							<li>
+								<Affiche
+									titre={apparition.titre}
+									couvertureUrl={apparition.couvertureUrl}
 									href={resolve('/work/[id]', { id: apparition.id })}
-									class="underline underline-offset-4">{apparition.titre}</a
+									situation={[apparition.type, apparition.dateDeParution]
+										.filter(Boolean)
+										.join(' · ')}
+									etat={apparition.consignee ? 'consigne' : 'aucun'}
+									{rang}
 								>
-								<span class="text-neutral-500">
-									· {apparition.type}{#if apparition.dateDeParution}
-										· {apparition.dateDeParution}{/if}
-								</span>
-							</span>
-
-							{#if apparition.consignee}
-								<span class="text-xs text-neutral-400">déjà sur une étagère</span>
-							{:else}
-								<form method="POST" action={actionConsigner} class="flex items-center gap-2">
-									<input type="hidden" name="oeuvre" value={apparition.id} />
-									{#each LIBELLES_ETAGERE as etagere (etagere.valeur)}
-										<button
-											name="etagere"
-											value={etagere.valeur}
-											class="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100"
-										>
-											{etagere.libelle}
-										</button>
-									{/each}
-								</form>
-							{/if}
-						</li>
-					{/each}
-				</ul>
+									{#if apparition.consignee}
+										<p class="mt-1 text-[0.7rem] text-encre-tenue">Déjà sur une étagère</p>
+									{:else}
+										<form method="POST" action={actionConsigner} class="mt-2 flex flex-wrap gap-1">
+											<input type="hidden" name="oeuvre" value={apparition.id} />
+											{#each LIBELLES_ETAGERE as etagere (etagere.valeur)}
+												<button
+													name="etagere"
+													value={etagere.valeur}
+													class="action-sourde px-1.5 py-0.5 text-[0.7rem]"
+												>
+													{etagere.libelle}
+												</button>
+											{/each}
+										</form>
+									{/if}
+								</Affiche>
+							</li>
+						{/each}
+					</Grille>
+				</div>
 				{#if noeud.apparitionsTronquees}
-					<p class="mt-2 text-xs text-neutral-400">
+					<p class="mt-3 text-xs text-encre-tenue">
 						D’autres apparitions existent au catalogue ; seules les plus anciennes sont proposées
 						ici.
 					</p>

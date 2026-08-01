@@ -100,7 +100,7 @@ export interface AuteurDOrdre {
 
 export interface EntreeDetaillee extends EntreeDOrdre {
 	/** `null` quand l'œuvre a disparu du catalogue. */
-	oeuvre: { id: string; titre: string; type: TypeOeuvre } | null;
+	oeuvre: { id: string; titre: string; type: TypeOeuvre; couvertureUrl: string | null } | null;
 	/** Pour le lecteur courant, jamais pour tout le monde. */
 	atteinte: boolean;
 }
@@ -832,7 +832,11 @@ async function entreesDe(db: Db, ordreId: string) {
 			oeuvreId: orderEntries.workId,
 			rang: orderEntries.rank,
 			facultative: orderEntries.optional,
-			type: works.type
+			type: works.type,
+			// La couverture vient de la même jointure que le type : la grille
+			// d'affiches est la forme de lecture d'un ordre, et elle ne vaut pas une
+			// requête de plus par entrée.
+			couvertureUrl: works.coverUrl
 		})
 		.from(orderEntries)
 		.leftJoin(works, eq(works.id, orderEntries.workId))
@@ -895,7 +899,8 @@ export async function lireOrdre(
 				: {
 						id: ligne.oeuvreId,
 						titre: titres.get(ligne.oeuvreId) ?? '',
-						type: ligne.type as TypeOeuvre
+						type: ligne.type as TypeOeuvre,
+						couvertureUrl: ligne.couvertureUrl
 					},
 			atteinte: !introuvable && atteintes.has(ligne.oeuvreId)
 		};

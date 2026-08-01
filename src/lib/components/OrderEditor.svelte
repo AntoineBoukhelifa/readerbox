@@ -34,7 +34,7 @@
 		facultative: boolean;
 		introuvable: boolean;
 		atteinte: boolean;
-		oeuvre: { id: string; titre: string; type: string } | null;
+		oeuvre: { id: string; titre: string; type: string; couvertureUrl: string | null } | null;
 	}
 
 	/**
@@ -139,56 +139,69 @@
 	<input type="hidden" name="rang" bind:this={champRang} />
 </form>
 
-<h2 class="mt-12 text-sm font-semibold tracking-tight">Verser des œuvres</h2>
+<h2 class="mt-12 enseigne">Verser des œuvres</h2>
 
-<form method="GET" class="mt-2 flex gap-2">
-	<input
-		type="search"
-		name="q"
-		bind:value={saisie}
-		oninput={frappe}
-		placeholder="Chercher un titre…"
-		class="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-	/>
-	<button class="rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium">
-		Chercher
-	</button>
+<form method="GET" class="mt-3 flex max-w-xl gap-2">
+	<label class="min-w-0 flex-1">
+		<span class="sr-only">Chercher une œuvre à verser</span>
+		<input
+			type="search"
+			name="q"
+			bind:value={saisie}
+			oninput={frappe}
+			placeholder="Chercher un titre…"
+			class="champ w-full"
+		/>
+	</label>
+	<button class="action-sourde">Chercher</button>
 </form>
 
 <!-- Une source qui ne répond pas ne fait pas échouer l’éditeur : elle le dit. -->
 {#each degradations as degradation (degradation.source)}
-	<p class="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">
+	<p class="mt-3 border-l-2 border-or-sourd bg-cimaise px-4 py-2 text-sm text-encre-basse">
 		{degradation.message}
 	</p>
 {/each}
 
 {#if requete !== ''}
 	{#if resultats.length === 0}
-		<p class="mt-2 text-sm text-neutral-500">
+		<p class="mt-3 text-sm text-encre-tenue">
 			Rien sous « {requete} », ni ici ni chez les sources.
 		</p>
 	{:else}
-		<ul class="mt-2 divide-y divide-neutral-200">
+		<ul class="mt-3 max-w-3xl border-t border-trait">
 			{#each resultats as resultat (cle(resultat))}
-				<li class="flex items-baseline justify-between gap-4 py-2">
-					<div class="text-sm">
-						<span class="font-medium">{resultat.titre}</span>
-						<span class="text-neutral-500">
-							· {LIBELLES[resultat.type] ?? resultat.type}
-							{#if resultat.serie}· {resultat.serie}{/if}
-							{#if resultat.numeroDansLaSerie !== null}· n° {resultat.numeroDansLaSerie}{/if}
-							{#if !resultat.connueDuGroupe}· personne ne l’a consignée{/if}
+				<li class="flex items-center justify-between gap-4 border-b border-trait py-2">
+					<span class="flex min-w-0 items-center gap-3 text-sm">
+						{#if resultat.couvertureUrl}
+							<img
+								src={resultat.couvertureUrl}
+								alt=""
+								loading="lazy"
+								class="h-12 w-8 shrink-0 bg-cimaise object-cover"
+							/>
+						{:else}
+							<span class="h-12 w-8 shrink-0 bg-cimaise" aria-hidden="true"></span>
+						{/if}
+						<span class="min-w-0">
+							<span class="text-encre">{resultat.titre}</span>
+							<span class="block text-xs text-encre-tenue">
+								{LIBELLES[resultat.type] ?? resultat.type}
+								{#if resultat.serie}· {resultat.serie}{/if}
+								{#if resultat.numeroDansLaSerie !== null}· n° {resultat.numeroDansLaSerie}{/if}
+								{#if !resultat.connueDuGroupe}· personne ne l’a consignée{/if}
+							</span>
 						</span>
-					</div>
+					</span>
 
 					{#if resultat.dejaPresente}
-						<span class="text-sm whitespace-nowrap text-neutral-400">Déjà dedans</span>
+						<span class="text-sm whitespace-nowrap text-encre-tenue">Déjà dedans</span>
 					{:else}
 						<form method="POST" action="?/ajouter" class="flex items-center gap-2">
 							<input type="hidden" name="oeuvre" value={resultat.id ?? ''} />
 							<input type="hidden" name="source" value={resultat.reference?.source ?? ''} />
 							<input type="hidden" name="idExterne" value={resultat.reference?.idExterne ?? ''} />
-							<button class="text-sm font-medium underline underline-offset-4">Ajouter</button>
+							<button class="lien text-sm">Ajouter</button>
 						</form>
 					{/if}
 				</li>
@@ -198,39 +211,31 @@
 {/if}
 
 {#if series.length > 0}
-	<form method="POST" action="?/ajouterSerie" class="mt-4 flex flex-wrap items-center gap-2">
-		<label for="serie" class="text-sm text-neutral-500">Ou verser une série entière</label>
-		<select
-			id="serie"
-			name="serie"
-			class="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-		>
+	<form method="POST" action="?/ajouterSerie" class="mt-5 flex flex-wrap items-center gap-2">
+		<label for="serie" class="text-sm text-encre-tenue">Ou verser une série entière</label>
+		<select id="serie" name="serie" class="champ py-1.5">
 			{#each series as serie (serie.entityId)}
 				<option value={serie.entityId}>{serie.nom} ({serie.nombreDOeuvres})</option>
 			{/each}
 		</select>
-		<label class="flex items-center gap-1.5 text-sm text-neutral-500">
+		<label class="flex items-center gap-1.5 text-sm text-encre-tenue">
 			<input type="checkbox" name="facultative" value="1" /> facultatives
 		</label>
-		<button class="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium">
-			Verser
-		</button>
+		<button class="action-sourde">Verser</button>
 	</form>
 {/if}
 
-<h2 class="mt-10 text-sm font-semibold tracking-tight">
-	Réordonner ({entrees.length})
-</h2>
-<p class="mt-1 text-sm text-neutral-500">
+<h2 class="mt-12 enseigne">Réordonner ({entrees.length})</h2>
+<p class="mt-2 max-w-2xl text-xs leading-relaxed text-encre-tenue">
 	Glisse une ligne pour la déplacer, ou sers-toi des flèches et du champ de rang — ils font la même
 	chose et fonctionnent au clavier. Réordonner ne fait rien perdre à personne : la progression d’un
 	suiveur est l’ensemble des œuvres qu’il a atteintes, jamais un rang.
 </p>
 
 {#if entrees.length === 0}
-	<p class="mt-2 text-sm text-neutral-500">Rien encore. Cherche une œuvre au-dessus.</p>
+	<p class="mt-3 text-sm text-encre-tenue">Rien encore. Cherche une œuvre au-dessus.</p>
 {:else}
-	<ul class="mt-2 divide-y divide-neutral-200">
+	<ul class="mt-3 border-t border-trait">
 		{#each entrees as entree, index (entree.id)}
 			<li
 				draggable="true"
@@ -244,27 +249,37 @@
 					evenement.preventDefault();
 					deposer(index);
 				}}
-				class="flex flex-wrap items-center gap-x-3 gap-y-2 py-2 {survolee === index &&
-				glissee !== null
-					? 'bg-neutral-100'
+				class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-trait py-2 {survolee ===
+					index && glissee !== null
+					? 'bg-cimaise'
 					: ''} {glissee === index ? 'opacity-40' : ''}"
 			>
-				<span class="w-8 cursor-grab text-sm text-neutral-400 select-none" aria-hidden="true">
+				<span class="w-8 cursor-grab text-sm text-encre-tenue select-none" aria-hidden="true">
 					⠿ {entree.rang + 1}
 				</span>
 
+				{#if entree.oeuvre?.couvertureUrl}
+					<img
+						src={entree.oeuvre.couvertureUrl}
+						alt=""
+						loading="lazy"
+						class="h-12 w-8 shrink-0 bg-cimaise object-cover
+							{entree.atteinte ? 'outline outline-1 outline-or/80' : ''}"
+					/>
+				{:else}
+					<span class="h-12 w-8 shrink-0 bg-cimaise" aria-hidden="true"></span>
+				{/if}
+
 				<span class="min-w-0 flex-1 text-sm">
 					{#if entree.oeuvre}
-						<span class="font-medium">{entree.oeuvre.titre}</span>
+						<span class={entree.atteinte ? 'text-or' : 'text-encre'}>{entree.oeuvre.titre}</span>
 					{:else}
-						<span class="text-neutral-400 italic">Œuvre disparue du catalogue</span>
+						<span class="text-encre-tenue italic">Œuvre disparue du catalogue</span>
 					{/if}
-					{#if entree.facultative}
-						<span class="text-neutral-500">· facultative</span>
-					{/if}
-					{#if entree.atteinte}
-						<span class="text-neutral-500">· atteinte</span>
-					{/if}
+					<span class="block text-xs text-encre-tenue">
+						{#if entree.facultative}facultative{:else}essentielle{/if}{#if entree.atteinte}
+							· atteinte{/if}
+					</span>
 				</span>
 
 				<!--
@@ -283,7 +298,7 @@
 				<form method="POST" class="flex items-center gap-2 text-sm">
 					<input type="hidden" name="entree" value={entree.id} />
 
-					<label class="order-3 flex items-center gap-1 text-neutral-500">
+					<label class="order-3 flex items-center gap-1">
 						<span class="sr-only">Rang</span>
 						<input
 							type="number"
@@ -291,18 +306,16 @@
 							min="1"
 							max={entrees.length}
 							value={entree.rang + 1}
-							class="w-16 rounded-md border border-neutral-300 px-2 py-1"
+							class="champ w-16 px-2 py-1"
 						/>
 					</label>
-					<button formaction="?/deplacer" class="order-4 underline underline-offset-4">
-						Placer
-					</button>
+					<button formaction="?/deplacer" class="lien order-4">Placer</button>
 
 					<button
 						formaction="?/monter"
 						disabled={index === 0}
 						aria-label="Monter d’un rang"
-						class="order-1 rounded border border-neutral-300 px-1.5 disabled:opacity-30"
+						class="action-sourde order-1 px-2 py-0.5"
 					>
 						↑
 					</button>
@@ -310,19 +323,17 @@
 						formaction="?/descendre"
 						disabled={index === entrees.length - 1}
 						aria-label="Descendre d’un rang"
-						class="order-2 rounded border border-neutral-300 px-1.5 disabled:opacity-30"
+						class="action-sourde order-2 px-2 py-0.5"
 					>
 						↓
 					</button>
 
 					<input type="hidden" name="facultative" value={entree.facultative ? '' : '1'} />
-					<button formaction="?/basculer" class="order-5 underline underline-offset-4">
+					<button formaction="?/basculer" class="lien order-5">
 						{entree.facultative ? 'Rendre essentielle' : 'Rendre facultative'}
 					</button>
 
-					<button formaction="?/retirer" class="order-6 text-red-600 underline underline-offset-4">
-						Retirer
-					</button>
+					<button formaction="?/retirer" class="risque order-6">Retirer</button>
 				</form>
 			</li>
 		{/each}

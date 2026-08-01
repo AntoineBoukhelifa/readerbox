@@ -87,6 +87,8 @@ export interface OeuvreEtablissante {
 	titre: string;
 	type: TypeOeuvre;
 	dateDeParution: string | null;
+	/** La couverture : un nœud s'ouvre sur une grille d'affiches, pas sur une liste. */
+	couvertureUrl: string | null;
 }
 
 /** R53 — un ordre du groupe qui couvre les œuvres de ce nœud. */
@@ -106,6 +108,7 @@ export interface Apparition {
 	titre: string;
 	type: TypeOeuvre;
 	dateDeParution: string | null;
+	couvertureUrl: string | null;
 	/** Déjà sur une étagère, mais pas atteinte — « à découvrir » ou « en cours ». */
 	consignee: boolean;
 }
@@ -269,7 +272,12 @@ async function lireOeuvres(db: Db, oeuvreIds: readonly string[]): Promise<Oeuvre
 
 	const [lignes, titres] = await Promise.all([
 		db
-			.select({ id: works.id, type: works.type, date: works.releaseDate })
+			.select({
+				id: works.id,
+				type: works.type,
+				date: works.releaseDate,
+				couvertureUrl: works.coverUrl
+			})
 			.from(works)
 			.where(inArray(works.id, ids)),
 		titresCorriges(db, ids)
@@ -280,7 +288,8 @@ async function lireOeuvres(db: Db, oeuvreIds: readonly string[]): Promise<Oeuvre
 			id: ligne.id,
 			titre: titres.get(ligne.id) ?? '',
 			type: ligne.type,
-			dateDeParution: ligne.date
+			dateDeParution: ligne.date,
+			couvertureUrl: ligne.couvertureUrl
 		}))
 		.sort(parDatePuisTitre);
 }
@@ -404,7 +413,12 @@ async function apparitionsNonAtteintes(
 		.map(([id]) => id);
 	if (manquantes.length > 0) {
 		for (const ligne of await db
-			.select({ id: works.id, type: works.type, date: works.releaseDate })
+			.select({
+				id: works.id,
+				type: works.type,
+				date: works.releaseDate,
+				couvertureUrl: works.coverUrl
+			})
 			.from(works)
 			.where(inArray(works.id, manquantes))) {
 			retenues.set(ligne.id, ligne);
@@ -439,6 +453,7 @@ async function apparitionsNonAtteintes(
 			titre: titres.get(oeuvre.id) ?? '',
 			type: oeuvre.type,
 			dateDeParution: oeuvre.date,
+			couvertureUrl: oeuvre.couvertureUrl,
 			consignee: consignees.has(oeuvre.id)
 		}))
 		.sort(parDatePuisTitre);
@@ -453,6 +468,7 @@ interface CandidateDuCatalogue {
 	id: string;
 	type: TypeOeuvre;
 	date: string | null;
+	couvertureUrl: string | null;
 }
 
 /** Les œuvres que le catalogue rattache à cette entité, dans sa couche de source. */
@@ -461,7 +477,12 @@ async function candidatesDuCatalogue(
 	entiteId: string,
 	dimension: Dimension
 ): Promise<CandidateDuCatalogue[]> {
-	const colonnes = { id: works.id, type: works.type, date: works.releaseDate };
+	const colonnes = {
+		id: works.id,
+		type: works.type,
+		date: works.releaseDate,
+		couvertureUrl: works.coverUrl
+	};
 
 	if (dimension === 'personnage') {
 		return db
