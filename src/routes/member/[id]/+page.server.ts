@@ -4,14 +4,21 @@ import { getDb } from '$lib/server/db';
 import { members } from '$lib/server/db/schema';
 import { lireJournal } from '$lib/server/journal/entries';
 import { masquer, reveler } from '$lib/server/masking/visibility';
+import { ordresDUnMembre } from '$lib/server/orders/orders';
+import { pourcentageAffiche } from '$lib/server/orders/progression';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
- * R6 — le journal d'un membre est consultable comme une page.
+ * R6 — le journal d'un membre est consultable comme une page : ce qu'il
+ * consigne, ses notes, ses avis, les ordres qu'il suit et ceux qu'il a créés.
  *
- * Les ordres qu'il suit et ceux qu'il a créés complètent la page ; ils
- * appartiennent à U7 et viendront s'ajouter ici.
+ * **Les pourcentages affichés à côté des ordres sont ceux du membre dont on lit
+ * la page**, pas ceux du visiteur. C'est la seule lecture qui ait un sens ici —
+ * on vient voir où *il* en est — et elle ne révèle rien : R28 pose que les notes
+ * et les agrégats traversent toujours, et une progression est de la même nature
+ * qu'une position de lecture, que R26 rend visible aussi.
  *
+
  * **Le masquage est celui de R27, et il vient d'ailleurs.** Cette page servait
  * provisoirement le texte des avis à leur seul auteur, faute de règle à appeler.
  * C'était plus strict que R27 — un membre qui a atteint l'œuvre a le droit de
@@ -29,6 +36,8 @@ export const load: PageServerLoad = async ({ params, locals, platform }) => {
 	if (!membre) error(404, 'Membre introuvable.');
 
 	const entrees = await lireJournal(db, membre.id);
+	// La progression rendue est celle du membre dont on lit la page.
+	const ordres = await ordresDUnMembre(db, membre.id, membre.id);
 
 	// Le lot part d'un coup : le masquage coûte trois requêtes pour l'ensemble du
 	// journal, pas trois par avis (KTD2).
@@ -51,9 +60,21 @@ export const load: PageServerLoad = async ({ params, locals, platform }) => {
 	);
 	const parAvis = new Map(avisVus.map((vu) => [vu.id, vu]));
 
+	const resumer = (ordre: (typeof ordres.crees)[number]) => ({
+		id: ordre.id,
+		titre: ordre.titre,
+		nombreDEntrees: ordre.nombreDEntrees,
+		nombreDeSuiveurs: ordre.nombreDeSuiveurs,
+		pourcentage: pourcentageAffiche(ordre.progression)
+	});
+
 	return {
 		membre: { id: membre.id, nom: membre.displayName, parti: membre.leftAt !== null },
 		soiMeme: locals.member.id === membre.id,
+		ordres: {
+			crees: ordres.crees.map(resumer),
+			suivis: ordres.suivis.map(resumer)
+		},
 		entrees: entrees.map((entree) => {
 			const vu = entree.avis === null ? undefined : parAvis.get(entree.avis.id);
 

@@ -11,14 +11,18 @@
 	{#if data.member}
 		<h1 class="text-2xl font-semibold tracking-tight">Salut {data.member.displayName}</h1>
 		<p class="mt-2 text-sm text-neutral-500">
-			Le journal, les ordres et le graphe arrivent. Pour l’instant tu peux faire entrer quelqu’un.
+			Le graphe arrive. En attendant : les ordres du groupe, et de quoi faire entrer quelqu’un.
 		</p>
 
-		<div class="mt-8 flex items-center gap-4">
+		<div class="mt-8 flex flex-wrap items-center gap-4">
 			<a
-				href={resolve('/invitations')}
+				href={resolve('/orders')}
 				class="rounded-md bg-neutral-900 px-4 py-2 font-medium text-white hover:bg-neutral-700"
 			>
+				Les ordres
+			</a>
+
+			<a href={resolve('/invitations')} class="text-sm underline underline-offset-4">
 				Inviter quelqu’un
 			</a>
 

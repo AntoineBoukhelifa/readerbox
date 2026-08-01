@@ -24,6 +24,15 @@
 	}
 
 	const pourcentage = (position: number) => `${Math.round(position * 100)} %`;
+
+	/** R20 — `null` désigne un ordre dont rien n'est essentiel, pas un zéro. */
+	const avancement = (valeur: number | null) => (valeur === null ? '—' : `${valeur} %`);
+
+	/** R6 — les ordres créés et les ordres suivis sont deux listes, pas une. */
+	const RAYONS_DORDRES = [
+		{ cle: 'crees' as const, titre: 'Ordres écrits' },
+		{ cle: 'suivis' as const, titre: 'Ordres suivis' }
+	];
 </script>
 
 <svelte:head><title>Journal de {data.membre.nom} — readerbox</title></svelte:head>
@@ -65,6 +74,28 @@
 								texte={entree.avis.texte}
 							/>
 						{/if}
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	{/each}
+
+	{#each RAYONS_DORDRES as { cle, titre } (cle)}
+		{@const liste = data.ordres[cle]}
+		{#if liste.length > 0}
+			<h2 class="mt-10 text-sm font-semibold tracking-tight">{titre}</h2>
+			<ul class="mt-2 divide-y divide-neutral-200">
+				{#each liste as ordre (ordre.id)}
+					<li class="flex items-baseline justify-between gap-4 py-3">
+						<a
+							href={resolve('/order/[id]', { id: ordre.id })}
+							class="text-sm font-medium underline underline-offset-4">{ordre.titre}</a
+						>
+						<span class="text-sm whitespace-nowrap text-neutral-500">
+							{ordre.nombreDEntrees} entrée{ordre.nombreDEntrees > 1 ? 's' : ''} · {avancement(
+								ordre.pourcentage
+							)}
+						</span>
 					</li>
 				{/each}
 			</ul>

@@ -43,6 +43,13 @@
       "when": 1785590470395,
       "tag": "0005_smooth_chronomancer",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1785591784006,
+      "tag": "0006_concerned_praxagora",
+      "breakpoints": true
     }
   ]
 }

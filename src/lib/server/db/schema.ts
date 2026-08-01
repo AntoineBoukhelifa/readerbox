@@ -5,7 +5,8 @@ import {
 	text,
 	index,
 	primaryKey,
-	uniqueIndex
+	uniqueIndex,
+	type AnySQLiteColumn
 } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { NOMS_DE_SOURCE, TYPES_OEUVRE } from '../catalog/sources/types';
@@ -700,6 +701,135 @@ export const reveals = sqliteTable(
 );
 
 export type Reveal = typeof reveals.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Ordres (U7)
+// ---------------------------------------------------------------------------
+
+/**
+ * Un ordre : une suite ordonnée d'entrées, titrée, signée par son auteur (R14).
+ *
+ * **Aucune colonne de progression, ici ni ailleurs, et c'est KTD8 pris à la
+ * lettre.** La progression d'un membre dans un ordre n'est jamais stockée : elle
+ * se dérive de l'intersection entre les entrées de l'ordre et les œuvres que ce
+ * membre a atteintes. C'est ce qui rend l'insertion et le réordonnancement sans
+ * danger pour les suiveurs — il n'y a rien à migrer, rien à recalculer, rien qui
+ * puisse diverger — et c'est aussi ce qui rend R36 trivial : cesser de suivre
+ * puis suivre à nouveau ne peut rien perdre, puisqu'il n'y avait rien à perdre.
+ *
+ * `authorId` reste renseigné même après le départ de son auteur (R38) : le
+ * membre garde sa ligne, marquée `leftAt`, et l'ordre s'affiche « sans auteur »
+ * tout en restant suivable. Le supprimer ferait disparaître un ordre que
+ * d'autres suivent, ce que R38 refuse explicitement.
+ *
+ * `forkedFromId` porte R17 : un fork est une copie des entrées **plus une
+ * référence à l'original**. La référence sert à l'affichage et à rien d'autre —
+ * modifier le fork ne touche jamais l'original, et c'est structurel puisque les
+ * entrées sont des lignes distinctes.
+ */
+export const orders = sqliteTable(
+	'orders',
+	{
+		id: text('id').primaryKey().$defaultFn(uuid),
+		authorId: text('author_id')
+			.notNull()
+			.references(() => members.id),
+		title: text('title').notNull(),
+		description: text('description').notNull().default(''),
+		/** R17 — l'ordre dont celui-ci est parti, quand c'en est un fork. */
+		forkedFromId: text('forked_from_id').references((): AnySQLiteColumn => orders.id),
+		createdAt: integer('created_at').notNull().$defaultFn(now),
+		updatedAt: integer('updated_at').notNull().$defaultFn(now)
+	},
+	(table) => [
+		index('orders_author_idx').on(table.authorId),
+		index('orders_forked_from_idx').on(table.forkedFromId)
+	]
+);
+
+/**
+ * Une entrée d'ordre : une œuvre, un rang, et une identité stable (R15).
+ *
+ * **Le rang est un attribut, jamais l'identité.** C'est la conséquence directe
+ * de R15 et la condition de R16 : une progression qui référencerait le rang
+ * casserait à la première insertion, alors qu'une progression qui référence
+ * l'œuvre atteinte survit à tout réordonnancement. Rien dans le produit ne
+ * désigne une entrée par son rang — ni la progression, ni les suiveurs, ni les
+ * surfaces.
+ *
+ * Les rangs sont **contigus de 0 à n-1** par construction, et `orders/orders.ts`
+ * est le seul module à les écrire. L'invariant n'est volontairement pas porté
+ * par un index unique `(order_id, rank)` : les décalages de rang se font par
+ * une mise à jour de plage — `rank = rank + 1 where rank >= p` — que SQLite
+ * évalue ligne à ligne et qu'un index unique ferait échouer sur un conflit
+ * transitoire. Deux instructions à coût constant quelle que soit la longueur de
+ * l'ordre, là où une renumérotation complète coûterait trois cents écritures
+ * dans les 10 ms d'une invocation (KTD2).
+ *
+ * `optional` porte R18. Une entrée facultative est **exclue du dénominateur** de
+ * la progression : sans cela, un membre qui les saute — l'usage même que R18
+ * prévoit — resterait bloqué sous 100 % indéfiniment.
+ *
+ * L'unicité `(order_id, work_id)` interdit à une œuvre de figurer deux fois dans
+ * le même ordre. Ce n'est pas une commodité : la progression est un **ensemble**
+ * d'œuvres atteintes (R19), et une œuvre présente deux fois compterait deux fois
+ * au dénominateur pour une seule lecture.
+ */
+export const orderEntries = sqliteTable(
+	'order_entries',
+	{
+		id: text('id').primaryKey().$defaultFn(uuid),
+		orderId: text('order_id')
+			.notNull()
+			.references(() => orders.id),
+		workId: text('work_id')
+			.notNull()
+			.references(() => works.id),
+		/** Contigu de 0 à n-1, maintenu par `orders/orders.ts` seul. */
+		rank: integer('rank').notNull(),
+		/** R18 — hors du dénominateur, et jamais proposée comme entrée suivante. */
+		optional: integer('optional', { mode: 'boolean' }).notNull().default(false),
+		createdAt: integer('created_at').notNull().$defaultFn(now)
+	},
+	(table) => [
+		index('order_entries_order_rank_idx').on(table.orderId, table.rank),
+		uniqueIndex('order_entries_order_work_idx').on(table.orderId, table.workId),
+		index('order_entries_work_idx').on(table.workId)
+	]
+);
+
+/**
+ * Le suivi d'un ordre par un membre (R17, R22, R36).
+ *
+ * La ligne ne porte **que le fait de suivre**, jamais l'avancement. R36 dit
+ * qu'un membre cesse de suivre sans perdre ses consignations et que suivre à
+ * nouveau recalcule sa progression depuis ses œuvres atteintes : avec une
+ * progression dérivée, cesser de suivre est une suppression de ligne et suivre
+ * à nouveau une insertion, sans qu'aucune donnée de lecture ne soit touchée. La
+ * restitution exacte est structurelle.
+ *
+ * La clé primaire porte l'idempotence : suivre deux fois n'écrit rien de plus.
+ */
+export const orderFollows = sqliteTable(
+	'order_follows',
+	{
+		orderId: text('order_id')
+			.notNull()
+			.references(() => orders.id),
+		memberId: text('member_id')
+			.notNull()
+			.references(() => members.id),
+		createdAt: integer('created_at').notNull().$defaultFn(now)
+	},
+	(table) => [
+		primaryKey({ columns: [table.orderId, table.memberId] }),
+		index('order_follows_member_idx').on(table.memberId)
+	]
+);
+
+export type Order = typeof orders.$inferSelect;
+export type OrderEntry = typeof orderEntries.$inferSelect;
+export type OrderFollow = typeof orderFollows.$inferSelect;
 
 // ---------------------------------------------------------------------------
 // Graphe de l'univers (U9)
