@@ -1,0 +1,35 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "readerbox",
+	"compatibility_date": "2026-08-01",
+	"compatibility_flags": ["nodejs_als"],
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	},
+	"workers_dev": true,
+	"preview_urls": true,
+
+	// Les traitements planifiés — reprise des cascades fractionnées de U5, plus
+	// tard la matérialisation du graphe — ne sont pas dans ce Worker-ci mais dans
+	// `wrangler.cron.jsonc`, sur la même base D1. La raison est l'adaptateur :
+	// il efface et réécrit le fichier désigné par `main` ci-dessus avec son propre
+	// `_worker.js`, qui n'exporte que `fetch`. Un handler `scheduled` ajouté ici
+	// serait détruit à chaque build.
+
+	// La base du groupe. `database_id` se remplit après `wrangler d1 create readerbox`,
+	// qui exige d'être authentifié sur Cloudflare. En local, wrangler monte une base
+	// SQLite dans .wrangler/ sans toucher au distant.
+	//
+	// Les clés d'API des sources ne sont pas ici : ce sont des secrets, posés par
+	// `wrangler secret put`, et en local dans .dev.vars — jamais versionnés.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "readerbox",
+			"database_id": "REMPLIR_APRES_WRANGLER_D1_CREATE",
+			"migrations_dir": "drizzle"
+		}
+	]
+}

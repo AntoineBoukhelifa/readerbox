@@ -38,7 +38,9 @@ Une œuvre en « à découvrir » ou « en cours » est consignée mais pas atte
 
 ## Décisions clés
 
-**Le masquage tient en une règle : un texte est visible si et seulement si le membre a atteint l'œuvre.** Ni l'étagère ni les ordres suivis n'entrent dans le calcul. Une règle unique, sans exception ni préséance à arbitrer, qui ne peut pas fuir par une surface qu'on aurait oubliée — c'est exactement ce qui manque au tag déclaratif de Goodreads, dont les mises à jour de statut échappent au masquage.
+**Le masquage tient en une règle : un texte est visible si le membre a atteint l'œuvre.** Ni l'étagère ni les ordres suivis n'entrent dans le calcul. Une règle qui ne peut pas fuir par une surface qu'on aurait oubliée — c'est exactement ce qui manque au tag déclaratif de Goodreads, dont les mises à jour de statut échappent au masquage.
+
+**Une seule exception, et seulement là où une position a un sens : sur une œuvre longue non atteinte, la position ouvre.** À 60 % d'un omnibus, on voit les commentaires écrits jusqu'à 60 %, et rien au-delà. C'est le dévoilement progressif dont le projet est parti, ramené à l'échelle où il tient : un roman ou un recueil ont une position comparable d'un lecteur à l'autre, une série ouverte n'en a pas. L'exception se paie d'une contrainte à l'écriture — publier exige une position strictement positive, faute de quoi écrire à zéro contournerait tout le dispositif.
 
 **Les notes ne sont jamais masquées, seuls les textes le sont.** C'est ce qui rend la règle unique vivable à l'échelle d'un catalogue de 50 000 entrées : un membre qui parcourt voit les notes partout et les textes de ce qu'il a atteint. La note agrégée du groupe est ce qu'on vient chercher avant ; l'avis détaillé est ce qu'on vient chercher après.
 
@@ -105,14 +107,14 @@ Une œuvre en « à découvrir » ou « en cours » est consignée mais pas atte
 
 - R23. Un membre déclare son avancement à l'intérieur d'une œuvre longue — roman, recueil, omnibus — en page ou en pourcentage.
 - R24. La position d'un membre dans une œuvre est nulle si l'œuvre n'est pas commencée, totale si elle est atteinte, et égale à la dernière valeur déclarée si elle est en cours.
-- R25. Déclarer sa position est obligatoire avant de publier un avis ou un commentaire sur une œuvre longue non atteinte.
+- R25. Déclarer une position **strictement positive** est obligatoire avant de publier un avis ou un commentaire sur une œuvre longue non atteinte. Sans le « strictement », publier à zéro serait un moyen trivial d'écrire un texte que tout le monde peut lire, puisque tout lecteur est au moins à zéro.
 - R26. La page d'une œuvre montre qui du groupe l'a atteinte, qui est en train de la lire ou de la regarder, et où il en est le cas échéant.
 
 **Masquage anti-spoiler**
 
-- R27. Le texte d'un avis ou d'un commentaire est visible pour un membre si et seulement si ce membre a atteint l'œuvre concernée.
+- R27. Le texte d'un avis ou d'un commentaire est visible pour un membre qui a atteint l'œuvre concernée. Un membre voit toujours ses propres textes.
 - R28. Les notes, leur agrégat et le nombre d'avis ne sont jamais masqués.
-- R29. À l'intérieur d'une œuvre longue non atteinte, un membre ne voit pas les contenus écrits à une position supérieure à la sienne.
+- R29. Sur une œuvre longue non atteinte, la position ouvre : un membre voit les contenus écrits à une position inférieure ou égale à la sienne, et rien au-delà. C'est la seule exception à R27, et elle n'existe que là où une position a un sens — un roman, un recueil. Une série ou une saison n'en ont pas : « 30 % d'une série » ne désigne rien de comparable d'un membre à l'autre.
 - R30. Tout avis et tout commentaire portent l'œuvre concernée et, pour une œuvre longue, la position de leur auteur au moment de la rédaction initiale. Une modification ultérieure ne change pas cette position.
 - R31. Un contenu masqué reste visible en tant qu'objet — on sait qu'il existe et qui l'a écrit — et se révèle par un geste explicite. La révélation vaut pour ce membre, sur cette œuvre, et persiste.
 - R32. Dans le fil d'activité, le titre d'une œuvre est masqué pour un membre qui l'a placée sur son étagère « à découvrir ». Ailleurs, les titres du fil sont visibles.

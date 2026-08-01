@@ -1,32 +1,30 @@
-# Dépendances
-node_modules/
+node_modules
 .pnpm-store/
 
-# Build SvelteKit
-.svelte-kit/
-build/
+# Sortie de build
+.output
+.vercel
+.netlify
+.wrangler
+/.svelte-kit
+/build
 dist/
-
-# Cloudflare Workers / Wrangler
-.wrangler/
-.dev.vars
-.dev.vars.*
-worker-configuration.d.ts
 
 # Secrets et configuration locale
 .env
 .env.*
 !.env.example
+!.env.test
+.dev.vars
+.dev.vars.*
+
+# Types générés par wrangler
+worker-configuration.d.ts
 
 # Base de données locale
 *.sqlite
 *.sqlite3
 *.db
-
-# Logs
-*.log
-npm-debug.log*
-yarn-error.log*
 
 # Système
 .DS_Store
@@ -34,9 +32,11 @@ Thumbs.db
 
 # Éditeurs
 .idea/
-.vscode/*
-!.vscode/extensions.json
 *.swp
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
 
 # Tests et couverture
 coverage/
