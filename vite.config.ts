@@ -16,6 +16,10 @@ export default defineConfig({
 			typescript: {
 				config: (config) => {
 					config.include.push('../drizzle.config.ts');
+					// Le Worker planifié vit hors de `src/` — il a sa propre configuration
+					// Wrangler — mais il appelle la couche serveur et doit être vérifié
+					// avec elle.
+					config.include.push('../workers/**/*.ts');
 				}
 			}
 		})

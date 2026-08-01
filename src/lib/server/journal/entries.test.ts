@@ -333,7 +333,8 @@ describe('retrait (R33)', () => {
 			ok: true,
 			franchissement: 'perte',
 			noteSupprimee: true,
-			avisSupprime: true
+			avisSupprime: true,
+			entreeConservee: false
 		});
 		expect(await lireConsignation(db, membreId, oeuvreId)).toBe(null);
 		expect(await agregatDOeuvre(db, oeuvreId)).toEqual({
@@ -353,7 +354,8 @@ describe('retrait (R33)', () => {
 			ok: true,
 			franchissement: null,
 			noteSupprimee: false,
-			avisSupprime: false
+			avisSupprime: false,
+			entreeConservee: false
 		});
 	});
 

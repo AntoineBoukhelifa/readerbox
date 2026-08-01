@@ -44,6 +44,10 @@ Les clés d'API des sources de données sont des secrets Cloudflare Worker, jama
 | `npm run lint`        | Prettier et ESLint                     |
 | `npm run db:generate` | Générer une migration depuis le schéma |
 | `npm run db:migrate`  | Appliquer les migrations               |
+| `npm run cron:dev`    | Worker planifié en local               |
+| `npm run cron:deploy` | Déployer le Worker planifié            |
+
+Le Worker planifié est un **second** Worker (`workers/cron.ts`, `wrangler.cron.jsonc`), sur la même base D1. Ce n'est pas un choix d'architecture : l'adaptateur SvelteKit efface et réécrit le fichier désigné par `main` dans `wrangler.jsonc`, et son `_worker.js` n'exporte que `fetch`. Le Cron Trigger — seul ordonnanceur du palier gratuit — y reprend les cascades de recueil interrompues.
 
 ## Conception
 

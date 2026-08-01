@@ -15,6 +15,8 @@
 		"test:unit": "vitest",
 		"test": "npm run test:unit -- --run",
 		"gen": "wrangler types",
+		"cron:dev": "wrangler dev --config wrangler.cron.jsonc --test-scheduled",
+		"cron:deploy": "wrangler deploy --config wrangler.cron.jsonc",
 		"db:push": "drizzle-kit push",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",

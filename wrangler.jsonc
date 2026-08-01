@@ -11,6 +11,13 @@
 	"workers_dev": true,
 	"preview_urls": true,
 
+	// Les traitements planifiés — reprise des cascades fractionnées de U5, plus
+	// tard la matérialisation du graphe — ne sont pas dans ce Worker-ci mais dans
+	// `wrangler.cron.jsonc`, sur la même base D1. La raison est l'adaptateur :
+	// il efface et réécrit le fichier désigné par `main` ci-dessus avec son propre
+	// `_worker.js`, qui n'exporte que `fetch`. Un handler `scheduled` ajouté ici
+	// serait détruit à chaque build.
+
 	// La base du groupe. `database_id` se remplit après `wrangler d1 create readerbox`,
 	// qui exige d'être authentifié sur Cloudflare. En local, wrangler monte une base
 	// SQLite dans .wrangler/ sans toucher au distant.

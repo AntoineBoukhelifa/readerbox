@@ -1,8 +1,10 @@
 import { and, avg, count, desc, eq, inArray, isNotNull, ne, type SQL } from 'drizzle-orm';
 import {
+	entryOrigins,
 	journalEntries,
 	members,
 	reviews,
+	workContents,
 	works,
 	type JournalEntry,
 	type OrigineDeConsignation
@@ -10,8 +12,16 @@ import {
 import type { Db } from '../db';
 import type { TypeOeuvre } from '../catalog/sources/types';
 import { titresCorriges } from '../catalog/corrections';
-import { estAtteinte, franchissement, type Etagere, type SensDeFranchissement } from './atteinte';
+import {
+	estAtteinte,
+	franchissement,
+	type Etagere,
+	type EtatDeLecture,
+	type SensDeFranchissement
+} from './atteinte';
 import { signalerFranchissement } from './frontiere';
+import { cascadeDescendante, etatLePlusAvance } from './contenance';
+import { planifierCascade } from './travaux';
 import {
 	normaliserPosition,
 	positionEffective,
@@ -29,6 +39,13 @@ import {
  * route ou depuis une autre unité contournerait la notification, et le défaut
  * serait silencieux — un graphe qui ne s'étend plus, un ordre qui n'avance plus,
  * sans aucun message d'erreur nulle part.
+ *
+ * **Il est aussi le seul à écrire dans `entry_origins`**, pour la même raison :
+ * R34 lie la durée de vie d'une entrée au nombre de ses appuis, et séparer les
+ * deux écritures reviendrait à autoriser une entrée dérivée sans appui — donc
+ * une consignation fantôme qu'aucun retrait n'atteint. `journal/cascade.ts`
+ * orchestre les lots ; il appelle `appliquerAppui` et `retirerAppui` ci-dessous
+ * et n'écrit rien lui-même.
  *
  * **Rien ne lève d'exception pour un refus attendu.** Une œuvre inconnue, une
  * note invalide, un avis qui n'est pas le sien sont des réponses typées, comme
@@ -98,6 +115,12 @@ export type ResultatRetrait =
 			/** R33 — ce que le retrait a emporté avec lui. */
 			noteSupprimee: boolean;
 			avisSupprime: boolean;
+			/**
+			 * R34 — l'entrée a-t-elle survécu au retrait, parce qu'un recueil la
+			 * soutient encore ? Le membre a besoin de le savoir : il vient de retirer
+			 * une consignation et l'œuvre est toujours dans son journal.
+			 */
+			entreeConservee: boolean;
 	  }
 	| { ok: false; motif: MotifRefusJournal };
 
@@ -128,6 +151,11 @@ export interface EntreeDeJournal {
 	avis: AvisDeJournal | null;
 	provenance: ProvenanceDeclaree;
 	origine: OrigineDeConsignation;
+	/**
+	 * R10 — les recueils qui soutiennent cette entrée, nommément identifiés.
+	 * Vide pour une consignation qu'aucun recueil ne couvre.
+	 */
+	recueils: string[];
 	consigneeLe: number;
 	misAJourLe: number;
 }
@@ -168,6 +196,314 @@ async function entreeDe(db: Db, membreId: string, oeuvreId: string): Promise<Jou
 		where: and(eq(journalEntries.memberId, membreId), eq(journalEntries.workId, oeuvreId))
 	});
 	return ligne ?? null;
+}
+
+/** Le type d'une œuvre, pour savoir si sa consignation cascade (R11). */
+async function typeDOeuvre(db: Db, oeuvreId: string): Promise<TypeOeuvre | null> {
+	const [ligne] = await db.select({ type: works.type }).from(works).where(eq(works.id, oeuvreId));
+	return ligne?.type ?? null;
+}
+
+/** Les recueils qui soutiennent une entrée (R10). */
+async function appuisDe(db: Db, entreeId: string): Promise<string[]> {
+	const lignes = await db
+		.select({ contenant: entryOrigins.containerWorkId })
+		.from(entryOrigins)
+		.where(eq(entryOrigins.entryId, entreeId));
+	return lignes.map((l) => l.contenant);
+}
+
+/**
+ * Planifie la cascade descendante d'un contenant, si c'en est un.
+ *
+ * Appelée après **chaque** geste de membre qui déplace l'état d'un contenant, et
+ * seulement quand l'état a réellement bougé : c'est ce qui fait que « terminer un
+ * omnibus » atteint ses quarante numéros sans qu'aucune surface n'ait à y penser.
+ * R11 est vérifié ici et nulle part ailleurs — consigner une série de comics ne
+ * planifie rien.
+ */
+async function planifierSiContenant(
+	db: Db,
+	membreId: string,
+	oeuvreId: string,
+	action: 'propager' | 'retirer',
+	type: TypeOeuvre | null,
+	now: number
+): Promise<void> {
+	if (type === null || !cascadeDescendante(type)) return;
+	await planifierCascade(db, { membreId, contenantId: oeuvreId, action, now });
+}
+
+/**
+ * R9, remontée — atteindre tous les numéros d'un recueil l'atteint.
+ *
+ * Distincte de la cascade descendante et volontairement plus étroite : elle ne
+ * s'applique qu'aux contenants dont **toutes** les lignes de contenu sont
+ * résolues et atteintes. Une ligne non encore résolue (`content_work_id` nul)
+ * suffit à s'abstenir — un omnibus dont on ne connaît que trois numéros sur
+ * quarante ne devient pas terminé parce qu'on a lu les trois.
+ *
+ * La remontée ne récurse pas : le contenant qu'elle atteint ne déclenche ni
+ * cascade descendante — ses numéros sont déjà tous atteints par hypothèse — ni
+ * remontée vers ses propres contenants. C'est un garde-fou contre des données
+ * cycliques, que les sources produisent, et le cas d'un recueil de recueils dont
+ * on aurait tout lu est trop rare pour justifier d'y risquer une récursion
+ * infinie ; le rattrapage du Cron le couvre au passage suivant.
+ */
+async function remonterVersLesContenants(
+	db: Db,
+	membreId: string,
+	oeuvreId: string,
+	now: number
+): Promise<void> {
+	const contenants = await db
+		.selectDistinct({ id: workContents.containerWorkId })
+		.from(workContents)
+		.where(
+			and(eq(workContents.contentWorkId, oeuvreId), ne(workContents.containerWorkId, oeuvreId))
+		)
+		.limit(10);
+
+	for (const { id: contenantId } of contenants) {
+		const contenus = await db
+			.select({ oeuvre: workContents.contentWorkId })
+			.from(workContents)
+			.where(eq(workContents.containerWorkId, contenantId));
+
+		const resolus = contenus.map((c) => c.oeuvre).filter((id): id is string => id !== null);
+		if (resolus.length === 0 || resolus.length !== contenus.length) continue;
+
+		const entrees = await db.query.journalEntries.findMany({
+			where: and(
+				eq(journalEntries.memberId, membreId),
+				inArray(journalEntries.workId, [...new Set(resolus)])
+			)
+		});
+		const atteintes = new Set(entrees.filter((e) => estAtteinte(etatDe(e))).map((e) => e.workId));
+		if (!resolus.every((id) => atteintes.has(id))) continue;
+
+		const avant = await entreeDe(db, membreId, contenantId);
+		if (avant !== null && estAtteinte(etatDe(avant))) continue;
+
+		const [apres] = avant
+			? await db
+					.update(journalEntries)
+					.set({ shelf: 'termine', abandonedAt: null, updatedAt: now })
+					.where(eq(journalEntries.id, avant.id))
+					.returning()
+			: await db
+					.insert(journalEntries)
+					.values({
+						memberId: membreId,
+						workId: contenantId,
+						shelf: 'termine',
+						provenance: 'catalogue',
+						// L'entrée n'est dérivée d'aucun recueil : c'est le membre qui a
+						// atteint ce contenant, en lisant tout ce qu'il contient. R10 n'a
+						// pas de troisième valeur à lui donner, et « directe » dit
+						// exactement la bonne chose — aucun appui de recueil ne la soutient,
+						// donc son retrait la supprime.
+						origin: 'directe',
+						createdAt: now,
+						updatedAt: now
+					})
+					.returning();
+
+		await signalerLeFranchissement(db, membreId, contenantId, avant, apres, now);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Appuis d'origine (R10, R34) — les primitives que la cascade de U5 appelle
+// ---------------------------------------------------------------------------
+
+/**
+ * L'état qu'une entrée dérivée doit prendre : le plus avancé de ses recueils
+ * d'appui.
+ *
+ * Le calcul porte sur **tous** les appuis et non sur celui qu'on vient
+ * d'ajouter ou de retirer, ce qui rend le résultat indépendant de l'ordre de
+ * traitement des lots. C'est cette propriété, et pas le curseur de reprise, qui
+ * fait qu'une cascade interrompue à mi-parcours reprend sans double effet.
+ */
+async function etatDerive(
+	db: Db,
+	membreId: string,
+	contenantIds: string[]
+): Promise<EtatDeLecture | null> {
+	if (contenantIds.length === 0) return null;
+
+	const entrees = await db.query.journalEntries.findMany({
+		where: and(
+			eq(journalEntries.memberId, membreId),
+			inArray(journalEntries.workId, [...new Set(contenantIds)])
+		)
+	});
+
+	return etatLePlusAvance(entrees.map(etatDe));
+}
+
+/**
+ * Ajoute — ou réaffirme — l'appui d'un recueil sur une œuvre qu'il contient.
+ *
+ * Trois choses ici, et l'ordre compte moins que leur idempotence :
+ *
+ * 1. L'entrée dérivée est créée si elle n'existe pas, avec l'état du recueil ;
+ * 2. l'appui est enregistré, sans doublon possible — deux recueils qui se
+ *    chevauchent sur les numéros 5 et 6 produisent une seule entrée par numéro,
+ *    avec deux appuis ;
+ * 3. l'état est propagé **seulement si l'entrée n'a pas d'état propre**. Une
+ *    entrée que le membre a posée lui-même porte `origin = 'directe'` et n'est
+ *    jamais écrasée : consigner un omnibus ne remet pas en « en cours » un
+ *    numéro que le membre avait terminé la semaine dernière.
+ *
+ * Rejouer cet appel sur un élément déjà traité ne produit rien — c'est ce qui
+ * rend le fractionnement sûr.
+ */
+export async function appliquerAppui(
+	db: Db,
+	options: { membreId: string; oeuvreId: string; contenantId: string; now?: number }
+): Promise<{ franchissement: SensDeFranchissement | null }> {
+	const now = options.now ?? Date.now();
+
+	// Une donnée de source où un recueil se contient lui-même existe, et la
+	// laisser passer créerait une entrée que plus rien ne peut supprimer :
+	// elle serait son propre appui.
+	if (options.oeuvreId === options.contenantId) return { franchissement: null };
+
+	const contenant = await entreeDe(db, options.membreId, options.contenantId);
+	if (contenant === null) return { franchissement: null };
+
+	const avant = await entreeDe(db, options.membreId, options.oeuvreId);
+	const appuis = avant === null ? [] : await appuisDe(db, avant.id);
+	const cible =
+		(await etatDerive(db, options.membreId, [...appuis, options.contenantId])) ?? etatDe(contenant);
+
+	let apres: JournalEntry;
+	if (avant === null) {
+		[apres] = await db
+			.insert(journalEntries)
+			.values({
+				memberId: options.membreId,
+				workId: options.oeuvreId,
+				shelf: cible.etagere,
+				abandonedAt: cible.abandonnee ? now : null,
+				// La provenance du recueil est celle de ses numéros : c'est par lui
+				// qu'ils sont arrivés dans le journal, et R43 doit informer le membre
+				// qui l'a recommandé.
+				provenance: contenant.provenance,
+				provenanceMemberId: contenant.provenanceMemberId,
+				provenanceOrderId: contenant.provenanceOrderId,
+				origin: 'derivee',
+				createdAt: now,
+				updatedAt: now
+			})
+			.returning();
+	} else if (avant.origin === 'derivee') {
+		[apres] = await db
+			.update(journalEntries)
+			.set({
+				shelf: cible.etagere,
+				abandonedAt: cible.abandonnee ? (avant.abandonedAt ?? now) : null,
+				updatedAt: now
+			})
+			.where(eq(journalEntries.id, avant.id))
+			.returning();
+	} else {
+		apres = avant;
+	}
+
+	await db
+		.insert(entryOrigins)
+		.values({ entryId: apres.id, containerWorkId: options.contenantId, createdAt: now })
+		.onConflictDoNothing();
+
+	const sens = await signalerLeFranchissement(
+		db,
+		options.membreId,
+		options.oeuvreId,
+		avant,
+		apres,
+		now
+	);
+
+	// Atteindre un numéro par cascade peut compléter un *autre* recueil que le
+	// membre lisait en parallèle (R9, remontée).
+	if (sens === 'atteinte') {
+		await remonterVersLesContenants(db, options.membreId, options.oeuvreId, now);
+	}
+
+	return { franchissement: sens };
+}
+
+/**
+ * R34 — retire l'appui d'un recueil, et ne supprime l'entrée que si plus aucune
+ * source ne la soutient.
+ *
+ * C'est le piège que le plan annonce, sous la même forme qu'en U9 : supprimer
+ * trop tôt. Un numéro dérivé de deux recueils survit au retrait de l'un des
+ * deux ; un numéro consigné directement puis couvert par un recueil survit au
+ * retrait du recueil, avec son origine directe intacte.
+ */
+export async function retirerAppui(
+	db: Db,
+	options: { membreId: string; oeuvreId: string; contenantId: string; now?: number }
+): Promise<{ franchissement: SensDeFranchissement | null; entreeSupprimee: boolean }> {
+	const now = options.now ?? Date.now();
+
+	const avant = await entreeDe(db, options.membreId, options.oeuvreId);
+	if (avant === null) return { franchissement: null, entreeSupprimee: false };
+
+	await db
+		.delete(entryOrigins)
+		.where(
+			and(eq(entryOrigins.entryId, avant.id), eq(entryOrigins.containerWorkId, options.contenantId))
+		);
+
+	const restants = await appuisDe(db, avant.id);
+
+	if (restants.length === 0 && avant.origin === 'derivee') {
+		await db.delete(reviews).where(eq(reviews.entryId, avant.id));
+		await db.delete(journalEntries).where(eq(journalEntries.id, avant.id));
+
+		const sens = await signalerLeFranchissement(
+			db,
+			options.membreId,
+			options.oeuvreId,
+			avant,
+			null,
+			now
+		);
+		return { franchissement: sens, entreeSupprimee: true };
+	}
+
+	// L'entrée reste. Son état se recalcule sur les appuis restants — sauf si le
+	// membre l'a faite sienne, auquel cas plus aucun recueil ne la commande.
+	let apres = avant;
+	if (avant.origin === 'derivee') {
+		const cible = await etatDerive(db, options.membreId, restants);
+		if (cible !== null) {
+			[apres] = await db
+				.update(journalEntries)
+				.set({
+					shelf: cible.etagere,
+					abandonedAt: cible.abandonnee ? (avant.abandonedAt ?? now) : null,
+					updatedAt: now
+				})
+				.where(eq(journalEntries.id, avant.id))
+				.returning();
+		}
+	}
+
+	const sens = await signalerLeFranchissement(
+		db,
+		options.membreId,
+		options.oeuvreId,
+		avant,
+		apres,
+		now
+	);
+	return { franchissement: sens, entreeSupprimee: false };
 }
 
 /**
@@ -222,7 +558,10 @@ export async function consigner(
 	const [apres] = avant
 		? await db
 				.update(journalEntries)
-				.set({ shelf: etagere, abandonedAt: null, updatedAt: now })
+				// `origin: 'directe'` est le point de U5 dans cette fonction : le membre
+				// vient de poser lui-même l'étagère, l'entrée a désormais un état propre
+				// et la propagation d'un recueil ne l'écrasera plus.
+				.set({ shelf: etagere, abandonedAt: null, origin: 'directe', updatedAt: now })
 				.where(eq(journalEntries.id, avant.id))
 				.returning()
 		: await db
@@ -249,12 +588,48 @@ export async function consigner(
 		now
 	);
 
+	await apresGesteDeMembre(db, options.membreId, options.oeuvreId, oeuvre.type, avant, apres, now);
+
 	return {
 		ok: true,
 		entreeId: apres.id,
 		atteinte: estAtteinte(etatDe(apres)),
 		franchissement: sens
 	};
+}
+
+/**
+ * Ce qu'un geste de membre entraîne au-delà de son entrée : la cascade
+ * descendante (R9, R11) et la remontée (R9).
+ *
+ * Rassemblé en un seul endroit et appelé depuis chaque geste, pour la même
+ * raison que le point d'appel unique de U4 : une surface qui oublierait
+ * l'appel produirait un omnibus terminé dont aucun numéro ne bouge, sans le
+ * moindre message d'erreur.
+ *
+ * **La cascade n'est planifiée que si l'état a réellement changé.** Le comparer
+ * par le prédicat ne suffit pas ici — passer de « à découvrir » à « en cours »
+ * ne franchit aucune frontière mais doit bien descendre aux numéros — donc la
+ * comparaison porte sur l'étagère et l'abandon.
+ */
+async function apresGesteDeMembre(
+	db: Db,
+	membreId: string,
+	oeuvreId: string,
+	type: TypeOeuvre | null,
+	avant: JournalEntry | null,
+	apres: JournalEntry,
+	now: number
+): Promise<void> {
+	const change =
+		avant === null || avant.shelf !== apres.shelf || avant.abandonedAt !== apres.abandonedAt;
+	if (!change) return;
+
+	await planifierSiContenant(db, membreId, oeuvreId, 'propager', type, now);
+
+	if (estAtteinte(etatDe(apres))) {
+		await remonterVersLesContenants(db, membreId, oeuvreId, now);
+	}
 }
 
 /**
@@ -275,7 +650,7 @@ export async function abandonner(
 
 	const [apres] = await db
 		.update(journalEntries)
-		.set({ abandonedAt: avant.abandonedAt ?? now, updatedAt: now })
+		.set({ abandonedAt: avant.abandonedAt ?? now, origin: 'directe', updatedAt: now })
 		.where(eq(journalEntries.id, avant.id))
 		.returning();
 
@@ -283,6 +658,16 @@ export async function abandonner(
 		db,
 		options.membreId,
 		options.oeuvreId,
+		avant,
+		apres,
+		now
+	);
+
+	await apresGesteDeMembre(
+		db,
+		options.membreId,
+		options.oeuvreId,
+		await typeDOeuvre(db, options.oeuvreId),
 		avant,
 		apres,
 		now
@@ -315,7 +700,7 @@ export async function reprendre(
 
 	const [apres] = await db
 		.update(journalEntries)
-		.set({ shelf: 'en_cours', abandonedAt: null, updatedAt: now })
+		.set({ shelf: 'en_cours', abandonedAt: null, origin: 'directe', updatedAt: now })
 		.where(eq(journalEntries.id, avant.id))
 		.returning();
 
@@ -323,6 +708,16 @@ export async function reprendre(
 		db,
 		options.membreId,
 		options.oeuvreId,
+		avant,
+		apres,
+		now
+	);
+
+	await apresGesteDeMembre(
+		db,
+		options.membreId,
+		options.oeuvreId,
+		await typeDOeuvre(db, options.oeuvreId),
 		avant,
 		apres,
 		now
@@ -366,6 +761,9 @@ export async function declarerPosition(
 			declaredPosition: normalisee.position,
 			totalLength: normalisee.longueurTotale ?? entree.totalLength,
 			shelf: entree.shelf === 'a_decouvrir' ? 'en_cours' : entree.shelf,
+			// Déclarer où l'on en est dans une œuvre est un geste de lecture : à
+			// partir de là, l'entrée a un état propre que le recueil ne commande plus.
+			origin: 'directe',
 			updatedAt: now
 		})
 		.where(eq(journalEntries.id, entree.id))
@@ -375,6 +773,16 @@ export async function declarerPosition(
 		db,
 		options.membreId,
 		options.oeuvreId,
+		entree,
+		apres,
+		now
+	);
+
+	await apresGesteDeMembre(
+		db,
+		options.membreId,
+		options.oeuvreId,
+		await typeDOeuvre(db, options.oeuvreId),
 		entree,
 		apres,
 		now
@@ -433,6 +841,13 @@ export async function noter(
  * L'avis est supprimé explicitement plutôt que par cascade de clé étrangère :
  * R33 est une règle du produit, pas un détail de moteur, et une cascade la
  * rendrait invisible dans le code comme dans les tests.
+ *
+ * **R34 borne ce que le retrait emporte.** Retirer une consignation directe ne
+ * supprime l'entrée que si plus aucun recueil ne la soutient. Sinon l'entrée
+ * repasse en dérivée, reprend l'état de ses recueils d'appui, et perd sa note et
+ * son avis — le membre a bien retiré *sa* consignation, mais l'omnibus qu'il est
+ * en train de lire contient toujours ce numéro. Supprimer l'entrée ici la ferait
+ * réapparaître au passage suivant du Cron, ce qui est le pire des deux mondes.
  */
 export async function retirer(
 	db: Db,
@@ -443,24 +858,54 @@ export async function retirer(
 	if (!entree) return { ok: false, motif: 'consignation introuvable' };
 
 	const avis = await db.query.reviews.findFirst({ where: eq(reviews.entryId, entree.id) });
+	const appuis = await appuisDe(db, entree.id);
+	const type = await typeDOeuvre(db, options.oeuvreId);
 
 	await db.delete(reviews).where(eq(reviews.entryId, entree.id));
-	await db.delete(journalEntries).where(eq(journalEntries.id, entree.id));
+
+	let apres: JournalEntry | null = null;
+	if (appuis.length > 0) {
+		const cible = (await etatDerive(db, options.membreId, appuis)) ?? etatDe(entree);
+		[apres] = await db
+			.update(journalEntries)
+			.set({
+				shelf: cible.etagere,
+				abandonedAt: cible.abandonnee ? (entree.abandonedAt ?? now) : null,
+				rating: null,
+				origin: 'derivee',
+				updatedAt: now
+			})
+			.where(eq(journalEntries.id, entree.id))
+			.returning();
+	} else {
+		await db.delete(entryOrigins).where(eq(entryOrigins.entryId, entree.id));
+		await db.delete(journalEntries).where(eq(journalEntries.id, entree.id));
+	}
 
 	const sens = await signalerLeFranchissement(
 		db,
 		options.membreId,
 		options.oeuvreId,
 		entree,
-		null,
+		apres,
 		now
 	);
+
+	// L'entrée du contenant a disparu : ses numéros perdent l'appui qu'elle leur
+	// donnait, et ceux que plus rien ne soutient s'en vont avec elle. Quarante
+	// numéros ne tiennent pas dans une requête, d'où la file (KTD2).
+	if (apres === null) {
+		await planifierSiContenant(db, options.membreId, options.oeuvreId, 'retirer', type, now);
+	} else {
+		await apresGesteDeMembre(db, options.membreId, options.oeuvreId, type, entree, apres, now);
+	}
 
 	return {
 		ok: true,
 		franchissement: sens,
 		noteSupprimee: entree.rating !== null,
-		avisSupprime: avis !== undefined
+		avisSupprime: avis !== undefined,
+		entreeConservee: apres !== null
 	};
 }
 
@@ -614,7 +1059,7 @@ async function lireEntrees(db: Db, filtre: SQL | undefined): Promise<EntreeDeJou
 
 	if (lignes.length === 0) return [];
 
-	const [titres, avis] = await Promise.all([
+	const [titres, avis, appuis] = await Promise.all([
 		titresCorriges(
 			db,
 			lignes.map((l) => l.entree.workId)
@@ -624,10 +1069,25 @@ async function lireEntrees(db: Db, filtre: SQL | undefined): Promise<EntreeDeJou
 				reviews.entryId,
 				lignes.map((l) => l.entree.id)
 			)
-		})
+		}),
+		db
+			.select({ entree: entryOrigins.entryId, contenant: entryOrigins.containerWorkId })
+			.from(entryOrigins)
+			.where(
+				inArray(
+					entryOrigins.entryId,
+					lignes.map((l) => l.entree.id)
+				)
+			)
 	]);
 
 	const parEntree = new Map(avis.map((a) => [a.entryId, a]));
+	const recueilsParEntree = new Map<string, string[]>();
+	for (const { entree, contenant } of appuis) {
+		const liste = recueilsParEntree.get(entree);
+		if (liste) liste.push(contenant);
+		else recueilsParEntree.set(entree, [contenant]);
+	}
 
 	return lignes.map(({ entree, type }) => {
 		const etat = etatDe(entree);
@@ -655,6 +1115,7 @@ async function lireEntrees(db: Db, filtre: SQL | undefined): Promise<EntreeDeJou
 				: null,
 			provenance: provenanceDe(entree),
 			origine: entree.origin,
+			recueils: recueilsParEntree.get(entree.id) ?? [],
 			consigneeLe: entree.createdAt,
 			misAJourLe: entree.updatedAt
 		};

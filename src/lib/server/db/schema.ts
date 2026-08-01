@@ -547,3 +547,114 @@ export const reachCrossings = sqliteTable(
 export type JournalEntry = typeof journalEntries.$inferSelect;
 export type Review = typeof reviews.$inferSelect;
 export type ReachCrossing = typeof reachCrossings.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Cascade des recueils (U5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Les appuis de recueil d'une entrée de journal (R10, R34).
+ *
+ * Un numéro est couramment soutenu par plusieurs sources à la fois : le membre
+ * l'a consigné lui-même, *et* deux omnibus qui se chevauchent le contiennent.
+ * Retirer l'une d'elles ne doit retirer l'entrée que si plus aucune ne la
+ * soutient — c'est littéralement R34, et c'est le même mécanisme de comptage
+ * d'appuis que les arêtes du graphe en U9. Même forme, même piège : supprimer
+ * trop tôt.
+ *
+ * **L'appui direct n'est pas une ligne d'ici, et c'est délibéré.** Il est porté
+ * par `journalEntries.origin`, qui vaut `directe` si et seulement si le membre a
+ * posé l'entrée lui-même. Deux raisons : une colonne nullable dans une clé
+ * primaire SQLite ne dédoublonne pas — deux lignes `(entrée, NULL)` cohabitent
+ * sans que rien ne le signale — et la colonne existe déjà, posée par U4 pour que
+ * les surfaces distinguent les deux cas sans jointure. Une entrée est donc
+ * supprimable exactement quand `origin` vaut `derivee` et qu'il ne reste ici
+ * aucune ligne pour elle.
+ *
+ * Corollaire utile : `origin = 'derivee'` veut dire « cette entrée n'a pas
+ * d'état propre », donc « la propagation du recueil peut l'écrire ». Dès qu'un
+ * membre y touche, elle passe en `directe` et cesse d'obéir au recueil.
+ */
+export const entryOrigins = sqliteTable(
+	'entry_origins',
+	{
+		entryId: text('entry_id')
+			.notNull()
+			.references(() => journalEntries.id),
+		containerWorkId: text('container_work_id')
+			.notNull()
+			.references(() => works.id),
+		createdAt: integer('created_at').notNull().$defaultFn(now)
+	},
+	(table) => [
+		primaryKey({ columns: [table.entryId, table.containerWorkId] }),
+		index('entry_origins_container_idx').on(table.containerWorkId)
+	]
+);
+
+/**
+ * Ce qu'une cascade fait aux entrées dérivées.
+ *
+ * Deux gestes seulement, et ils ne sont pas symétriques : `propager` ajoute les
+ * appuis et pousse l'état du contenant, `retirer` retire les appuis et supprime
+ * ce qui n'est plus soutenu.
+ */
+export const ACTIONS_DE_CASCADE = ['propager', 'retirer'] as const;
+export type ActionDeCascade = (typeof ACTIONS_DE_CASCADE)[number];
+
+/**
+ * Une cascade de recueil en cours, reprise par lots (KTD2).
+ *
+ * Consigner un omnibus de quarante numéros suppose autant d'ingestions amont et
+ * autant de jeux d'appuis de graphe, ce qui dépasse à la fois les 10 ms de temps
+ * processeur par requête et le plafond de sous-requêtes par invocation. La
+ * consignation du recueil est donc immédiate — une ligne ici — et la propagation
+ * se fait par lots que le Cron Trigger reprend.
+ *
+ * **Ce que cette ligne ne porte pas est aussi important que ce qu'elle porte :
+ * l'état à propager n'y figure pas.** L'exécuteur relit l'état courant du
+ * contenant à chaque lot. Figer l'étagère cible au moment de la planification
+ * ferait propager un état périmé quand le membre termine l'omnibus avant que le
+ * Cron n'ait fini de traiter la consignation précédente — et c'est exactement la
+ * séquence la plus probable.
+ *
+ * `lastSource` et `lastExternalId` sont le curseur de reprise, sur l'ordre total
+ * `(source, id externe)` de `work_contents`. Cet ordre n'a aucun sens éditorial
+ * et n'en a pas besoin : tous les éléments d'un lot reçoivent le même traitement,
+ * seule compte la stabilité de l'ordre, que la clé primaire donne gratuitement.
+ * Le curseur est une **optimisation, pas une garantie** : rejouer un élément déjà
+ * traité est sans effet, l'idempotence est portée par les écritures elles-mêmes.
+ * Le geste `retirer` ne s'en sert pas — ses éléments disparaissent à mesure.
+ */
+export const cascades = sqliteTable(
+	'cascades',
+	{
+		id: text('id').primaryKey().$defaultFn(uuid),
+		memberId: text('member_id')
+			.notNull()
+			.references(() => members.id),
+		containerWorkId: text('container_work_id')
+			.notNull()
+			.references(() => works.id),
+		action: text('action', { enum: ACTIONS_DE_CASCADE }).notNull(),
+		lastSource: text('last_source', { enum: NOMS_DE_SOURCE }),
+		lastExternalId: text('last_external_id'),
+		/** Combien d'éléments ont été traités, pour l'état de progression visible. */
+		processedCount: integer('processed_count').notNull().default(0),
+		/** Combien il y en avait à la planification. Indicatif : le contenu peut se résoudre après. */
+		totalCount: integer('total_count').notNull().default(0),
+		createdAt: integer('created_at').notNull().$defaultFn(now),
+		updatedAt: integer('updated_at').notNull().$defaultFn(now),
+		completedAt: integer('completed_at')
+	},
+	(table) => [
+		index('cascades_pending_idx').on(table.completedAt, table.createdAt),
+		index('cascades_member_container_idx').on(table.memberId, table.containerWorkId),
+		uniqueIndex('cascades_pending_unique_idx')
+			.on(table.memberId, table.containerWorkId)
+			.where(sql`completed_at is null`)
+	]
+);
+
+export type EntryOrigin = typeof entryOrigins.$inferSelect;
+export type Cascade = typeof cascades.$inferSelect;
