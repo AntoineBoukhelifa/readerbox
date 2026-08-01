@@ -18,17 +18,19 @@
 	// `_worker.js`, qui n'exporte que `fetch`. Un handler `scheduled` ajouté ici
 	// serait détruit à chaque build.
 
-	// La base du groupe. `database_id` se remplit après `wrangler d1 create readerbox`,
-	// qui exige d'être authentifié sur Cloudflare. En local, wrangler monte une base
-	// SQLite dans .wrangler/ sans toucher au distant.
+	// La base du groupe, créée en région Europe de l'Ouest. En local, wrangler monte
+	// une base SQLite dans .wrangler/ sans toucher au distant.
 	//
-	// Les clés d'API des sources ne sont pas ici : ce sont des secrets, posés par
-	// `wrangler secret put`, et en local dans .dev.vars — jamais versionnés.
+	// L'identifiant n'est pas un secret — il ne donne accès à rien sans être
+	// authentifié sur le compte — d'où sa présence dans un dépôt public.
+	//
+	// Les clés d'API des sources, elles, ne sont pas ici : ce sont des secrets,
+	// posés par `wrangler secret put`, et en local dans .dev.vars — jamais versionnés.
 	"d1_databases": [
 		{
 			"binding": "DB",
 			"database_name": "readerbox",
-			"database_id": "REMPLIR_APRES_WRANGLER_D1_CREATE",
+			"database_id": "1662bc35-c287-4884-aa7e-88ef1d69f93f",
 			"migrations_dir": "drizzle"
 		}
 	]

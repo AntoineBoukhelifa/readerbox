@@ -27,7 +27,7 @@
 		{
 			"binding": "DB",
 			"database_name": "readerbox",
-			"database_id": "REMPLIR_APRES_WRANGLER_D1_CREATE",
+			"database_id": "1662bc35-c287-4884-aa7e-88ef1d69f93f",
 			"migrations_dir": "drizzle"
 		}
 	]
