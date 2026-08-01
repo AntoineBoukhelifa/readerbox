@@ -69,13 +69,15 @@ async function oeuvre(idExterne: string, type: TypeOeuvre = 'numero'): Promise<s
 function evenement<T>(
 	membreConnecte: Member | null,
 	params: Record<string, string>,
-	champs: Record<string, string> = {}
+	champs: Record<string, string> = {},
+	requete = ''
 ): T {
 	const corps = new FormData();
 	for (const [nom, valeur] of Object.entries(champs)) corps.set(nom, valeur);
 
 	return {
 		params,
+		url: new URL(`http://localhost/${requete}`),
 		locals: { member: membreConnecte },
 		platform: { env: { DB: {} } },
 		request: new Request('http://localhost/', { method: 'POST', body: corps })

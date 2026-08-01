@@ -24,6 +24,17 @@
 			? null
 			: (data.entrees.find((entree) => entree.id === data.progression.entreeSuivante?.id) ?? null)
 	);
+
+	/**
+	 * R42 — le lien vers une œuvre porte l'ordre d'où il part.
+	 *
+	 * C'est la seule façon dont la provenance peut se constater : elle est un fait
+	 * de navigation, et le serveur ne le devine pas. Le paramètre est forgeable, et
+	 * c'est pourquoi la page d'œuvre le revérifie — l'ordre doit exister et
+	 * contenir l'œuvre — au chargement comme à l'écriture.
+	 */
+	const versLOeuvre = (oeuvreId: string) =>
+		resolve(`/work/[id]?depuis=${encodeURIComponent(data.ordre.id)}`, { id: oeuvreId });
 </script>
 
 <svelte:head><title>{data.ordre.titre} — readerbox</title></svelte:head>
@@ -73,9 +84,8 @@
 			<p class="mt-2 text-sm">
 				<span class="text-neutral-500">À suivre :</span>
 				{#if suivante.oeuvre}
-					<a
-						href={resolve('/work/[id]', { id: suivante.oeuvre.id })}
-						class="font-medium underline underline-offset-4">{suivante.oeuvre.titre}</a
+					<a href={versLOeuvre(suivante.oeuvre.id)} class="font-medium underline underline-offset-4"
+						>{suivante.oeuvre.titre}</a
 					>
 				{:else}
 					<span class="text-neutral-400 italic">une œuvre disparue du catalogue</span>
@@ -151,7 +161,7 @@
 							<span class="text-neutral-400">{entree.rang + 1}.</span>
 							{#if entree.oeuvre}
 								<a
-									href={resolve('/work/[id]', { id: entree.oeuvre.id })}
+									href={versLOeuvre(entree.oeuvre.id)}
 									class="font-medium underline underline-offset-4">{entree.oeuvre.titre}</a
 								>
 							{:else}

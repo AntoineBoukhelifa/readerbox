@@ -759,6 +759,41 @@ export async function cesserDeSuivre(
 // ---------------------------------------------------------------------------
 
 /**
+ * R42 — l'ordre qu'une surface déclare comme provenance, s'il peut l'être.
+ *
+ * La provenance arrive par l'URL — un membre suit un ordre, clique vers une
+ * œuvre, la consigne — donc elle est **forgeable** : rien n'empêche de poster
+ * l'identifiant d'un ordre quelconque. Ce qui la rend vérifiable est qu'elle
+ * énonce un fait contrôlable : « je suis arrivé sur cette œuvre par cet ordre »
+ * n'est possible que si l'ordre existe et **contient l'œuvre**. Un ordre qui ne
+ * la contient pas ne mène nulle part, et la prétention tombe d'elle-même.
+ *
+ * Le suivi, lui, n'est délibérément pas exigé : R17 rend les ordres visibles par
+ * tout le groupe, et parcourir un ordre sans le suivre est le geste normal de
+ * qui le découvre. L'exiger transformerait une constatation en permission.
+ *
+ * Rend le titre avec l'identifiant parce que la surface qui vérifie est celle qui
+ * annonce « tu arrives depuis *Par où entrer* » : deux lectures pour la même
+ * chose seraient une de trop.
+ */
+export async function ordreProvenant(
+	db: Db,
+	ordreId: string,
+	oeuvreId: string
+): Promise<{ id: string; titre: string } | null> {
+	if (ordreId === '' || oeuvreId === '') return null;
+
+	const [ligne] = await db
+		.select({ id: orders.id, titre: orders.title })
+		.from(orders)
+		.innerJoin(orderEntries, eq(orderEntries.orderId, orders.id))
+		.where(and(eq(orders.id, ordreId), eq(orderEntries.workId, oeuvreId)))
+		.limit(1);
+
+	return ligne ?? null;
+}
+
+/**
  * Les œuvres qu'un membre a atteintes, parmi celles qu'on lui demande.
  *
  * L'atteinte est dérivée par `journal/atteinte.ts`, ici comme partout ailleurs :
