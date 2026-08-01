@@ -700,3 +700,114 @@ export const reveals = sqliteTable(
 );
 
 export type Reveal = typeof reveals.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Graphe de l'univers (U9)
+// ---------------------------------------------------------------------------
+
+/**
+ * R49 — les trois types de relation du graphe, filtrables indépendamment.
+ *
+ * Ce sont exactement les trois familles d'arêtes de KTD4, et exactement les
+ * trois familles de nœuds de R50. Le créateur n'y figure pas : il est une entité
+ * du catalogue (il alimente la recherche de R45) mais pas un nœud du graphe —
+ * `CHAMPS_DE_RATTACHEMENT` de `catalog/corrections.ts` fait déjà la même
+ * distinction, et les deux listes doivent rester d'accord.
+ */
+export const TYPES_DE_RELATION = [
+	'personnage',
+	'serie',
+	'event'
+] as const satisfies readonly TypeEntite[];
+export type TypeDeRelation = (typeof TYPES_DE_RELATION)[number];
+
+/**
+ * Une arête visible du graphe d'un membre (R48, R51, R52).
+ *
+ * **La forme de la table est la règle de dérivation de KTD4, prise à la
+ * lettre.** Une œuvre atteinte établit trois familles d'arêtes : une arête entre
+ * chaque personnage crédité et l'œuvre elle-même, une entre l'œuvre et sa série
+ * de rattachement, une entre l'œuvre et son event. Les deux extrémités de toute
+ * arête sont donc *une œuvre* et *une entité* — et KTD4 ajoute que l'arête est
+ * **agrégée au nœud d'entité**. C'est ce que cette table stocke : une ligne par
+ * couple `(membre, relation, entité)`, et l'extrémité « œuvre » est portée par
+ * la table des appuis ci-dessous, où chaque ligne est l'autre bout d'une arête
+ * élémentaire.
+ *
+ * Ce que l'agrégation achète, et pourquoi elle n'est pas une commodité :
+ *
+ * - **R50** — les nœuds sont agrégés au personnage, à la série et à l'event,
+ *   jamais à l'œuvre individuelle. Un membre qui a lu trois cents numéros d'une
+ *   même série voit *un* nœud de série, pas trois cents ;
+ * - **R53** — depuis un nœud, on atteint les œuvres qui l'ont établi. Ce sont
+ *   littéralement ses appuis, sans requête supplémentaire ;
+ * - **R33** — le retrait devient exact : on retire l'appui d'une œuvre, et le
+ *   nœud ne disparaît que s'il perd son dernier appui. C'est le mécanisme des
+ *   origines de consignation de U5, sous un autre nom, avec le même piège —
+ *   supprimer trop tôt.
+ *
+ * **Ce qu'on ne stocke pas, et c'est le point de KTD4 :** aucune arête de
+ * co-apparition entre personnages. Relier deux à deux les crédits d'un numéro
+ * à vingt personnages produirait cent quatre-vingt-dix arêtes, multipliées par
+ * membre, là où la double appartenance au même nœud d'œuvre — c'est-à-dire deux
+ * arêtes partageant un appui — dit déjà la même chose. La cardinalité reste
+ * linéaire dans le nombre de crédits, et c'est ce qui rend le volume tenable
+ * sous les 100 000 lignes écrites par jour de D1 (KTD2).
+ */
+export const graphEdges = sqliteTable(
+	'graph_edges',
+	{
+		id: text('id').primaryKey().$defaultFn(uuid),
+		memberId: text('member_id')
+			.notNull()
+			.references(() => members.id),
+		relation: text('relation', { enum: TYPES_DE_RELATION }).notNull(),
+		entityId: text('entity_id')
+			.notNull()
+			.references(() => entities.id),
+		createdAt: integer('created_at').notNull().$defaultFn(now)
+	},
+	(table) => [
+		uniqueIndex('graph_edges_member_relation_entity_idx').on(
+			table.memberId,
+			table.relation,
+			table.entityId
+		),
+		index('graph_edges_member_relation_idx').on(table.memberId, table.relation)
+	]
+);
+
+/**
+ * Les œuvres atteintes qui établissent une arête (R51, R52, R33).
+ *
+ * Une ligne d'ici est l'autre extrémité d'une arête élémentaire : `(œuvre,
+ * entité)`. L'ensemble des lignes d'une arête est donc la liste des œuvres qui
+ * la portent, et R52 devient **structurel** plutôt que déclaratif : une arête
+ * sans appui n'existe pas, puisque toute lecture du graphe joint cette table.
+ * Un lien établi par une seule œuvre non atteinte n'a aucun appui, donc aucune
+ * arête, **même lorsque ses deux nœuds sont déjà présents par ailleurs** — ce
+ * qu'un calcul au rendu inviterait précisément à rater, en joignant des nœuds
+ * déjà visibles.
+ *
+ * Les appuis sont **par membre**, jamais partagés : c'est ce volume-là qu'il
+ * faut surveiller sous les plafonds Cloudflare, pas celui du catalogue.
+ */
+export const graphEdgeSupports = sqliteTable(
+	'graph_edge_supports',
+	{
+		edgeId: text('edge_id')
+			.notNull()
+			.references(() => graphEdges.id),
+		workId: text('work_id')
+			.notNull()
+			.references(() => works.id),
+		createdAt: integer('created_at').notNull().$defaultFn(now)
+	},
+	(table) => [
+		primaryKey({ columns: [table.edgeId, table.workId] }),
+		index('graph_edge_supports_work_idx').on(table.workId)
+	]
+);
+
+export type GraphEdge = typeof graphEdges.$inferSelect;
+export type GraphEdgeSupport = typeof graphEdgeSupports.$inferSelect;

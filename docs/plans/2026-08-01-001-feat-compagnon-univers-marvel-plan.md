@@ -54,11 +54,15 @@ Le plan couvre l'intégralité des 53 exigences du document d'origine. Traçabil
 
 **KTD4 — Le graphe visible est matérialisé par membre, jamais calculé au rendu, et sa règle de dérivation est explicite.** Une œuvre atteinte établit trois familles d'arêtes, correspondant aux trois types de relation de R49 :
 
-- **personnage** — une arête entre chaque personnage crédité de l'œuvre et l'œuvre elle-même, agrégée au nœud personnage. Pas de co-apparition deux à deux : relier les personnages entre eux produirait un nombre d'arêtes quadratique dans le nombre de crédits, soit près de deux cents arêtes pour un numéro à vingt personnages, sans rien apporter que la double appartenance au même nœud d'œuvre ne dise déjà.
-- **série** — une arête entre l'œuvre et sa série de rattachement.
-- **event** — une arête entre l'œuvre et son event de rattachement quand il existe.
+**Le nœud est l'entité — personnage, série ou event — et jamais l'œuvre (R50). L'œuvre est portée par l'appui** : chaque ligne d'appui est l'autre extrémité d'une arête élémentaire. Une œuvre atteinte établit donc, pour le membre qui l'a atteinte :
+
+- **personnage** — un appui par personnage crédité, sur le nœud de ce personnage. Pas de co-apparition deux à deux : relier les personnages entre eux produirait un nombre d'arêtes quadratique dans le nombre de crédits, soit près de deux cents arêtes pour un numéro à vingt personnages, sans rien apporter que le partage d'un même appui ne dise déjà.
+- **série** — un appui sur le nœud de sa série de rattachement.
+- **event** — un appui sur le nœud de son event de rattachement, quand il existe.
 
 La cardinalité est donc linéaire dans le nombre de crédits, et U1 mesure le nombre médian de crédits par numéro pour que le volume soit chiffré et non estimé.
+
+L'adjacence entre deux entités se lit par le partage d'un appui, sans jamais la matérialiser. C'est aussi ce qui rend R53 possible — depuis un nœud, remonter aux œuvres qui l'ont établi — et ce qui permet à une arête d'avoir plusieurs appuis, donc de survivre au retrait de l'un d'eux.
 
 Une table d'arêtes visibles par membre est mise à jour sur **deux déclencheurs**, et non un seul : le franchissement de la frontière « atteint » dans un sens ou dans l'autre, et **toute modification des rattachements d'une œuvre** — correction de fiche (R47), ré-ingestion (R39), fusion de doublons. Sans le second, un personnage ajouté à une œuvre déjà atteinte n'apparaîtrait jamais dans aucun graphe, silencieusement et définitivement. Chaque arête matérialisée conserve la liste des œuvres qui l'établissent, ce qui rend le retrait exact et la garantie de R52 structurelle : une arête sans appui n'existe pas.
 
